@@ -35,7 +35,7 @@ import java.nio.charset.StandardCharsets;
  *
  *          //网关设备
  *          子设备上线消息: /{productId}/{deviceId}/child/{childDeviceId}/connected
- *          子设备下线消息: /{productId}/{deviceId}/child/{childDeviceId}/disconnected
+ *          子设备下线消息: /{productId}/{deviceId}/child/{childDeviceId}/disconnect
  *          读取子设备属性回复: /{productId}/{deviceId}/child/{childDeviceId}/properties/read/reply
  *          修改子设备属性回复: /{productId}/{deviceId}/child/{childDeviceId}/properties/write/reply
  *          调用子设备功能回复: /{productId}/{deviceId}/child/{childDeviceId}/function/invoke/reply
