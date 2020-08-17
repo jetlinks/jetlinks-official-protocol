@@ -179,14 +179,13 @@ class JetlinksTopicMessageCodec {
             message = object.toJavaObject(ReportFirmwareMessage.class);
         } else if (result.isUpgradeFirmwareProgress()) {
             message = object.toJavaObject(UpgradeFirmwareProgressMessage.class);
+        }else if (topic.endsWith("connected")) {
+            message = object.toJavaObject(DeviceOnlineMessage.class);
+        } else if (topic.endsWith("disconnect")) {
+            message = object.toJavaObject(DeviceOfflineMessage.class);
         }
 
         if (result.isChild()) {
-            if (topic.endsWith("connected")) {
-                message = object.toJavaObject(DeviceOnlineMessage.class);
-            } else if (topic.endsWith("disconnect")) {
-                message = object.toJavaObject(DeviceOfflineMessage.class);
-            }
             if (message == null) {
                 throw new UnsupportedOperationException("unsupported topic:" + topic);
             }
