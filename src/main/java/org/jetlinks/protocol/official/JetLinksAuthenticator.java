@@ -48,7 +48,7 @@ public class JetLinksAuthenticator implements Authenticator {
                             //签名
                             String digest = DigestUtils.md5Hex(username + "|" + secureKey);
                             if (requestSecureId.equals(secureId) && digest.equals(password)) {
-                                return AuthenticationResponse.success();
+                                return AuthenticationResponse.success(deviceOperation.getDeviceId());
                             } else {
                                 return AuthenticationResponse.error(401, "密钥错误");
                             }
