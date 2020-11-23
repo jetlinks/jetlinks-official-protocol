@@ -3,16 +3,22 @@ package org.jetlinks.protocol.official;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.jetlinks.core.Value;
 import org.jetlinks.core.defaults.Authenticator;
-import org.jetlinks.core.device.AuthenticationRequest;
-import org.jetlinks.core.device.AuthenticationResponse;
-import org.jetlinks.core.device.DeviceOperator;
-import org.jetlinks.core.device.MqttAuthenticationRequest;
+import org.jetlinks.core.device.*;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.Nonnull;
 import java.util.concurrent.TimeUnit;
 
 public class JetLinksAuthenticator implements Authenticator {
+
+    @Override
+    public Mono<AuthenticationResponse> authenticate(@Nonnull AuthenticationRequest request, @Nonnull DeviceRegistry registry) {
+        MqttAuthenticationRequest mqtt = ((MqttAuthenticationRequest) request);
+
+        return registry
+                .getDevice(mqtt.getClientId())
+                .flatMap(device -> authenticate(request, device));
+    }
 
     @Override
     public Mono<AuthenticationResponse> authenticate(@Nonnull AuthenticationRequest request, @Nonnull DeviceOperator deviceOperation) {
