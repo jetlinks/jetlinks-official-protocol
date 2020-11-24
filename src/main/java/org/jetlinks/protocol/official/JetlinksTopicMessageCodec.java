@@ -10,6 +10,7 @@ import org.jetlinks.core.message.firmware.*;
 import org.jetlinks.core.message.function.FunctionInvokeMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
+import org.jetlinks.core.utils.TopicUtils;
 import org.jetlinks.supports.utils.MqttTopicUtils;
 import org.springframework.util.Assert;
 
@@ -41,14 +42,14 @@ class JetlinksTopicMessageCodec {
 
         public DecodeResult(String topic) {
             this.topic = topic;
-            args = MqttTopicUtils.getPathVariables("/{productId}/{deviceId}/**", topic);
+            args = TopicUtils.getPathVariables("/{productId}/{deviceId}/**", topic);
             if (topic.contains("child")) {
                 child = true;
-                args.putAll(MqttTopicUtils.getPathVariables("/**/child/{childDeviceId}/**", topic));
+                args.putAll(TopicUtils.getPathVariables("/**/child/{childDeviceId}/**", topic));
             }
             if (topic.contains("event")) {
                 event = true;
-                args.putAll(MqttTopicUtils.getPathVariables("/**/event/{eventId}", topic));
+                args.putAll(TopicUtils.getPathVariables("/**/event/{eventId}", topic));
             }
             derivedMetadata = topic.endsWith("metadata/derived");
             if (event) {
@@ -190,11 +191,10 @@ class JetlinksTopicMessageCodec {
                 throw new UnsupportedOperationException("unsupported topic:" + topic);
             }
             applyCommons(message, result, object);
-            ChildDeviceMessageReply children = new ChildDeviceMessageReply();
+            ChildDeviceMessage children = new ChildDeviceMessage();
             children.setChildDeviceId(result.getChildDeviceId());
             children.setDeviceId(result.getDeviceId());
             children.setChildDeviceMessage(message);
-            children.setSuccess(Optional.ofNullable(object.getBoolean("success")).orElse(true));
             children.setTimestamp(Optional.ofNullable(object.getLong("timestamp")).orElse(System.currentTimeMillis()));
             Optional.ofNullable(object.getString("messageId")).ifPresent(children::setMessageId);
             result.message = children;
