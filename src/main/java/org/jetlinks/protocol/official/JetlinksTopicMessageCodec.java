@@ -11,7 +11,6 @@ import org.jetlinks.core.message.function.FunctionInvokeMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
 import org.jetlinks.core.utils.TopicUtils;
-import org.jetlinks.supports.utils.MqttTopicUtils;
 import org.springframework.util.Assert;
 
 import java.util.Map;
@@ -86,7 +85,7 @@ class JetlinksTopicMessageCodec {
         Assert.notNull(message, "message can not be null");
 
         if (message instanceof ReadPropertyMessage) {
-            String topic = "/" .concat(deviceId).concat("/properties/read");
+            String topic = "/".concat(deviceId).concat("/properties/read");
             JSONObject mqttData = new JSONObject();
             mqttData.put("messageId", message.getMessageId());
             mqttData.put("properties", ((ReadPropertyMessage) message).getProperties());
@@ -94,7 +93,7 @@ class JetlinksTopicMessageCodec {
 
             return new EncodedTopic(topic, mqttData);
         } else if (message instanceof WritePropertyMessage) {
-            String topic = "/" .concat(deviceId).concat("/properties/write");
+            String topic = "/".concat(deviceId).concat("/properties/write");
             JSONObject mqttData = new JSONObject();
             mqttData.put("messageId", message.getMessageId());
             mqttData.put("properties", ((WritePropertyMessage) message).getProperties());
@@ -102,7 +101,7 @@ class JetlinksTopicMessageCodec {
 
             return new EncodedTopic(topic, mqttData);
         } else if (message instanceof FunctionInvokeMessage) {
-            String topic = "/" .concat(deviceId).concat("/function/invoke");
+            String topic = "/".concat(deviceId).concat("/function/invoke");
             FunctionInvokeMessage invokeMessage = ((FunctionInvokeMessage) message);
             JSONObject mqttData = new JSONObject();
             mqttData.put("messageId", message.getMessageId());
@@ -112,7 +111,7 @@ class JetlinksTopicMessageCodec {
 
             return new EncodedTopic(topic, mqttData);
         } else if (message instanceof UpgradeFirmwareMessage) {
-            String topic = "/" .concat(deviceId).concat("/firmware/upgrade");
+            String topic = "/".concat(deviceId).concat("/firmware/upgrade");
             UpgradeFirmwareMessage firmwareMessage = ((UpgradeFirmwareMessage) message);
             JSONObject mqttData = new JSONObject();
             mqttData.put("messageId", message.getMessageId());
@@ -125,13 +124,13 @@ class JetlinksTopicMessageCodec {
 
             return new EncodedTopic(topic, mqttData);
         } else if (message instanceof ReadFirmwareMessage) {
-            String topic = "/" .concat(deviceId).concat("/firmware/read");
+            String topic = "/".concat(deviceId).concat("/firmware/read");
             JSONObject mqttData = new JSONObject();
             mqttData.put("messageId", message.getMessageId());
             mqttData.put("deviceId", deviceId);
             return new EncodedTopic(topic, mqttData);
         } else if (message instanceof RequestFirmwareMessageReply) {
-            String topic = "/" .concat(deviceId).concat("/firmware/pull/reply");
+            String topic = "/".concat(deviceId).concat("/firmware/pull/reply");
             RequestFirmwareMessageReply firmwareMessage = ((RequestFirmwareMessageReply) message);
             JSONObject mqttData = new JSONObject();
             mqttData.put("messageId", message.getMessageId());
@@ -145,7 +144,7 @@ class JetlinksTopicMessageCodec {
         } else if (message instanceof ChildDeviceMessage) {
             ChildDeviceMessage childDeviceMessage = ((ChildDeviceMessage) message);
             EncodedTopic result = encode(childDeviceMessage.getChildDeviceId(), childDeviceMessage.getChildDeviceMessage());
-            String topic = "/" .concat(deviceId).concat("/child").concat(result.topic);
+            String topic = "/".concat(deviceId).concat("/child").concat(result.topic);
             result.payload.put("deviceId", childDeviceMessage.getChildDeviceId());
 
             return new EncodedTopic(topic, result.payload);
@@ -180,7 +179,7 @@ class JetlinksTopicMessageCodec {
             message = object.toJavaObject(ReportFirmwareMessage.class);
         } else if (result.isUpgradeFirmwareProgress()) {
             message = object.toJavaObject(UpgradeFirmwareProgressMessage.class);
-        }else if (topic.endsWith("connected")) {
+        } else if (topic.endsWith("connected")) {
             message = object.toJavaObject(DeviceOnlineMessage.class);
         } else if (topic.endsWith("disconnect")) {
             message = object.toJavaObject(DeviceOfflineMessage.class);
