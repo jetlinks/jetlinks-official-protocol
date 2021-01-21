@@ -1,17 +1,16 @@
 package org.jetlinks.protocol.official;
 
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
 import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
 import org.jetlinks.core.device.DeviceConfigKey;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.Message;
 import org.jetlinks.core.message.codec.*;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.Nonnull;
-import java.nio.charset.StandardCharsets;
 
 /**
  * <pre>
@@ -49,10 +48,9 @@ import java.nio.charset.StandardCharsets;
  * @since 1.0.0
  */
 @Slf4j
-public class JetLinksMqttDeviceMessageCodec extends JetlinksTopicMessageCodec implements DeviceMessageCodec {
+public class JetLinksMqttDeviceMessageCodec implements DeviceMessageCodec {
 
-    private Transport transport;
-
+    private final Transport transport;
 
     public JetLinksMqttDeviceMessageCodec(Transport transport) {
         this.transport = transport;
@@ -74,18 +72,20 @@ public class JetLinksMqttDeviceMessageCodec extends JetlinksTopicMessageCodec im
             if (message instanceof DeviceMessage) {
                 DeviceMessage deviceMessage = ((DeviceMessage) message);
 
-                EncodedTopic convertResult = encode(deviceMessage.getDeviceId(), deviceMessage);
+                TopicPayload convertResult = TopicMessageCodec.encode(ObjectMappers.JSON_MAPPER, deviceMessage);
                 if (convertResult == null) {
                     return Mono.empty();
                 }
-                return context.getDevice()
+                return context
+                        .getDevice()
                         .getConfig(DeviceConfigKey.productId)
                         .defaultIfEmpty("null")
-                        .map(productId -> SimpleMqttMessage.builder()
+                        .map(productId -> SimpleMqttMessage
+                                .builder()
                                 .clientId(deviceMessage.getDeviceId())
-                                .topic("/" .concat(productId).concat(convertResult.topic))
+                                .topic("/".concat(productId).concat(convertResult.getTopic()))
                                 .payloadType(MessagePayloadType.JSON)
-                                .payload(Unpooled.wrappedBuffer(JSON.toJSONBytes(convertResult.payload)))
+                                .payload(Unpooled.wrappedBuffer(JSON.toJSONBytes(convertResult.getPayload())))
                                 .build());
             } else {
                 return Mono.empty();
@@ -95,18 +95,14 @@ public class JetLinksMqttDeviceMessageCodec extends JetlinksTopicMessageCodec im
 
     @Nonnull
     @Override
-    public Mono<Message> decode(@Nonnull MessageDecodeContext context) {
-        return Mono.fromSupplier(() -> {
-            MqttMessage message = (MqttMessage) context.getMessage();
-            String topic = message.getTopic();
-            String jsonData = message.getPayload().toString(StandardCharsets.UTF_8);
+    public Flux<DeviceMessage> decode(@Nonnull MessageDecodeContext context) {
+        MqttMessage message = (MqttMessage) context.getMessage();
 
-            JSONObject object = JSON.parseObject(jsonData, JSONObject.class);
-            if (object == null) {
-                throw new UnsupportedOperationException("cannot parse payload:{}" + jsonData);
-            }
-            return decode(topic, object).getMessage();
-        });
+        byte[] payload = message.payloadAsBytes();
+
+        return TopicMessageCodec
+                .decode(ObjectMappers.JSON_MAPPER, TopicMessageCodec.removeProductPath(message.getTopic()), payload);
+
     }
 
 }
