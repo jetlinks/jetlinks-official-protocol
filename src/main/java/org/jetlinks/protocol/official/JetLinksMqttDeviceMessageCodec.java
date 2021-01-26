@@ -85,7 +85,7 @@ public class JetLinksMqttDeviceMessageCodec implements DeviceMessageCodec {
                                 .clientId(deviceMessage.getDeviceId())
                                 .topic("/".concat(productId).concat(convertResult.getTopic()))
                                 .payloadType(MessagePayloadType.JSON)
-                                .payload(Unpooled.wrappedBuffer(JSON.toJSONBytes(convertResult.getPayload())))
+                                .payload(Unpooled.wrappedBuffer(convertResult.getPayload()))
                                 .build());
             } else {
                 return Mono.empty();
