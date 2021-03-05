@@ -100,7 +100,12 @@ public enum TopicMessageCodec {
             return Mono.just(message);
         }
     },
-
+    //断开连接消息
+    disconnect("/*/disconnect", DisconnectDeviceMessage.class),
+    //上线
+    connect("/*/online", DeviceOnlineMessage.class),
+    //离线
+    offline("/*/offline", DeviceOfflineMessage.class),
     ;
 
     TopicMessageCodec(String topic, Class<? extends DeviceMessage> type) {

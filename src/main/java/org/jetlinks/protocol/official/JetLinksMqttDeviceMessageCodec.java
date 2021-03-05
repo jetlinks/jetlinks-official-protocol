@@ -5,8 +5,10 @@ import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
 import org.jetlinks.core.device.DeviceConfigKey;
 import org.jetlinks.core.message.DeviceMessage;
+import org.jetlinks.core.message.DisconnectDeviceMessage;
 import org.jetlinks.core.message.Message;
 import org.jetlinks.core.message.codec.*;
+import org.jetlinks.core.server.session.DeviceSession;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -69,6 +71,13 @@ public class JetLinksMqttDeviceMessageCodec implements DeviceMessageCodec {
     public Mono<MqttMessage> encode(@Nonnull MessageEncodeContext context) {
         return Mono.defer(() -> {
             Message message = context.getMessage();
+
+            if (message instanceof DisconnectDeviceMessage) {
+                return ((ToDeviceMessageContext) context)
+                        .disconnect()
+                        .then(Mono.empty());
+            }
+
             if (message instanceof DeviceMessage) {
                 DeviceMessage deviceMessage = ((DeviceMessage) message);
 
