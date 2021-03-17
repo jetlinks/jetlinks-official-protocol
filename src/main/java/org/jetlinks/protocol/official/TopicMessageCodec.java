@@ -102,10 +102,14 @@ public enum TopicMessageCodec {
     },
     //断开连接消息
     disconnect("/*/disconnect", DisconnectDeviceMessage.class),
+    //断开连接回复
+    disconnectReply("/*/disconnect/reply", DisconnectDeviceMessageReply.class),
     //上线
     connect("/*/online", DeviceOnlineMessage.class),
     //离线
     offline("/*/offline", DeviceOfflineMessage.class),
+    //日志
+    log("/*/log", DeviceLogMessage.class),
     ;
 
     TopicMessageCodec(String topic, Class<? extends DeviceMessage> type) {
