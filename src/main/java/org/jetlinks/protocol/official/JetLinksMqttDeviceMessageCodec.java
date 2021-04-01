@@ -85,9 +85,12 @@ public class JetLinksMqttDeviceMessageCodec implements DeviceMessageCodec {
                 if (convertResult == null) {
                     return Mono.empty();
                 }
-                return context
-                        .getDevice()
-                        .getConfig(DeviceConfigKey.productId)
+                return Mono
+                        .justOrEmpty(deviceMessage.getHeader("productId").map(String::valueOf))
+                        .switchIfEmpty(context.getDevice(deviceMessage.getDeviceId())
+                                              .flatMap(device -> device
+                                                      .getConfig(DeviceConfigKey.productId))
+                        )
                         .defaultIfEmpty("null")
                         .map(productId -> SimpleMqttMessage
                                 .builder()
