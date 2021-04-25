@@ -9,6 +9,8 @@ import org.jetlinks.core.message.firmware.*;
 import org.jetlinks.core.message.function.FunctionInvokeMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
+import org.jetlinks.core.message.state.DeviceStateCheckMessage;
+import org.jetlinks.core.message.state.DeviceStateCheckMessageReply;
 import org.jetlinks.core.utils.TopicUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -71,6 +73,42 @@ public enum TopicMessageCodec {
             return payload;
 
         }
+    }, //子设备消息回复
+    childReply("/*/child-reply/*/**", ChildDeviceMessageReply.class) {
+        @Override
+        public Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+            String[] _topic = Arrays.copyOfRange(topic, 2, topic.length);
+            _topic[0] = "";// topic以/开头所有第一位是空白
+            return TopicMessageCodec
+                    .decode(mapper, _topic, payload)
+                    .map(childMsg -> {
+                        ChildDeviceMessageReply msg = new ChildDeviceMessageReply();
+                        msg.setDeviceId(topic[1]);
+                        msg.setChildDeviceMessage(childMsg);
+                        msg.setTimestamp(childMsg.getTimestamp());
+                        msg.setMessageId(childMsg.getMessageId());
+                        return msg;
+                    });
+        }
+
+        @Override
+        protected TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message) {
+            ChildDeviceMessageReply deviceMessage = ((ChildDeviceMessageReply) message);
+
+            DeviceMessage childMessage = ((DeviceMessage) deviceMessage.getChildDeviceMessage());
+
+            TopicPayload payload = TopicMessageCodec.encode(mapper, childMessage);
+            String[] childTopic = payload.getTopic().split("/");
+            String[] topic = new String[topics.length + childTopic.length - 3];
+            //合并topic
+            System.arraycopy(topics, 0, topic, 0, topics.length - 1);
+            System.arraycopy(childTopic, 1, topic, topics.length - 2, childTopic.length - 1);
+
+            refactorTopic(topic, message);
+            payload.setTopic(String.join("/", topic));
+            return payload;
+
+        }
     },
     //更新标签
     updateTag("/*/tags", UpdateTagMessage.class),
@@ -110,6 +148,9 @@ public enum TopicMessageCodec {
     offline("/*/offline", DeviceOfflineMessage.class),
     //日志
     log("/*/log", DeviceLogMessage.class),
+    //状态检查
+    stateCheck("/*/state-check", DeviceStateCheckMessage.class),
+    stateCheckReply("/*/state-check/reply", DeviceStateCheckMessageReply.class),
     ;
 
     TopicMessageCodec(String topic, Class<? extends DeviceMessage> type) {
