@@ -122,6 +122,8 @@ public enum TopicMessageCodec {
     upgradeProcessFirmware("/*/firmware/upgrade/progress", UpgradeFirmwareProgressMessage.class),
     //拉取固件
     requestFirmware("/*/firmware/pull", RequestFirmwareMessage.class),
+    //拉取固件更新回复
+    requestFirmwareReply("/*/firmware/pull/reply", RequestFirmwareMessageReply.class),
     //上报固件版本
     reportFirmware("/*/firmware/report", ReportFirmwareMessage.class),
     //读取固件回复
