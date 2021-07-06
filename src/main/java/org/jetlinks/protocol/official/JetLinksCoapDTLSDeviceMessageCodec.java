@@ -1,22 +1,25 @@
 package org.jetlinks.protocol.official;
 
-import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.eclipse.californium.core.coap.CoAP;
+import org.eclipse.californium.core.coap.OptionNumberRegistry;
 import org.hswebframework.web.id.IDGenerator;
-import org.jetlinks.core.message.Message;
+import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.codec.*;
+import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.Nonnull;
-import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.function.Consumer;
 
 @Slf4j
-public class JetLinksCoapDTLSDeviceMessageCodec extends JetlinksTopicMessageCodec implements DeviceMessageCodec {
+public class JetLinksCoapDTLSDeviceMessageCodec implements DeviceMessageCodec {
 
     @Override
     public Transport getSupportTransport() {
@@ -24,15 +27,22 @@ public class JetLinksCoapDTLSDeviceMessageCodec extends JetlinksTopicMessageCode
     }
 
 
-    public Mono<? extends Message> decode(CoapMessage message, MessageDecodeContext context, Consumer<Object> response) {
-        return Mono.defer(() -> {
+    public Flux<DeviceMessage> decode(CoapMessage message, MessageDecodeContext context, Consumer<Object> response) {
+        return Flux.defer(() -> {
             String path = message.getPath();
             String sign = message.getStringOption(2110).orElse(null);
             String token = message.getStringOption(2111).orElse(null);
-            String payload = message.getPayload().toString(StandardCharsets.UTF_8);
+            byte[] payload = message.payloadAsBytes();
+            boolean cbor = message
+                    .getStringOption(OptionNumberRegistry.CONTENT_FORMAT)
+                    .map(MediaType::valueOf)
+                    .map(MediaType.APPLICATION_CBOR::includes)
+                    .orElse(false);
+            ObjectMapper objectMapper = cbor ? ObjectMappers.CBOR_MAPPER : ObjectMappers.JSON_MAPPER;
             if ("/auth".equals(path)) {
                 //认证
-                return context.getDevice()
+                return context
+                        .getDevice()
                         .getConfig("secureKey")
                         .flatMap(sk -> {
                             String secureKey = sk.asString();
@@ -42,12 +52,12 @@ public class JetLinksCoapDTLSDeviceMessageCodec extends JetlinksTopicMessageCode
                             }
                             String newToken = IDGenerator.MD5.generate();
                             return context.getDevice()
-                                    .setConfig("coap-token", newToken)
-                                    .doOnSuccess(success -> {
-                                        JSONObject json = new JSONObject();
-                                        json.put("token", newToken);
-                                        response.accept(json.toJSONString());
-                                    });
+                                          .setConfig("coap-token", newToken)
+                                          .doOnSuccess(success -> {
+                                              JSONObject json = new JSONObject();
+                                              json.put("token", newToken);
+                                              response.accept(json.toJSONString());
+                                          });
                         })
                         .then(Mono.empty());
             }
@@ -55,22 +65,21 @@ public class JetLinksCoapDTLSDeviceMessageCodec extends JetlinksTopicMessageCode
                 response.accept(CoAP.ResponseCode.UNAUTHORIZED);
                 return Mono.empty();
             }
-            return context.getDevice()
+            return context
+                    .getDevice()
                     .getConfig("coap-token")
-                    .switchIfEmpty(Mono.fromRunnable(() -> {
-                        response.accept(CoAP.ResponseCode.UNAUTHORIZED);
-                    }))
-                    .flatMap(value -> {
+                    .switchIfEmpty(Mono.fromRunnable(() -> response.accept(CoAP.ResponseCode.UNAUTHORIZED)))
+                    .flatMapMany(value -> {
                         String tk = value.asString();
                         if (!token.equals(tk)) {
                             response.accept(CoAP.ResponseCode.UNAUTHORIZED);
                             return Mono.empty();
                         }
-                        return Mono
-                                .just(decode(path, JSON.parseObject(payload)).getMessage())
+                        return TopicMessageCodec
+                                .decode(objectMapper, TopicMessageCodec.removeProductPath(path), payload)
                                 .switchIfEmpty(Mono.fromRunnable(() -> response.accept(CoAP.ResponseCode.BAD_REQUEST)));
                     })
-                    .doOnSuccess(msg -> {
+                    .doOnComplete(() -> {
                         response.accept(CoAP.ResponseCode.CREATED);
                     })
                     .doOnError(error -> {
@@ -83,7 +92,7 @@ public class JetLinksCoapDTLSDeviceMessageCodec extends JetlinksTopicMessageCode
 
     @Nonnull
     @Override
-    public Mono<? extends Message> decode(@Nonnull MessageDecodeContext context) {
+    public Flux<DeviceMessage> decode(@Nonnull MessageDecodeContext context) {
         if (context.getMessage() instanceof CoapExchangeMessage) {
             CoapExchangeMessage exchangeMessage = ((CoapExchangeMessage) context.getMessage());
             return decode(exchangeMessage, context, resp -> {
@@ -101,12 +110,15 @@ public class JetLinksCoapDTLSDeviceMessageCodec extends JetlinksTopicMessageCode
             });
         }
 
-        return Mono.empty();
+        return Flux.empty();
     }
 
-    protected boolean verifySign(String secureKey, String deviceId, String payload, String sign) {
+    protected boolean verifySign(String secureKey, String deviceId, byte[] payload, String sign) {
         //验证签名
-        if (StringUtils.isEmpty(secureKey) || !DigestUtils.md5Hex(payload.concat(secureKey)).equalsIgnoreCase(sign)) {
+        byte[] secureKeyBytes = secureKey.getBytes();
+        byte[] signPayload = Arrays.copyOf(payload, payload.length + secureKeyBytes.length);
+        System.arraycopy(secureKeyBytes, 0, signPayload, 0, secureKeyBytes.length);
+        if (StringUtils.isEmpty(secureKey) || !DigestUtils.md5Hex(signPayload).equalsIgnoreCase(sign)) {
             log.info("device [{}] coap sign [{}] error, payload:{}", deviceId, sign, payload);
             return false;
         }

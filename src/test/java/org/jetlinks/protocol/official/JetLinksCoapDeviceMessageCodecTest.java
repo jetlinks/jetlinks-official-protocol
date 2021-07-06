@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class JetLinksCoapDeviceMessageCodecTest {
 
 
-   JetLinksCoapDeviceMessageCodec codec = new JetLinksCoapDeviceMessageCodec();
+    JetLinksCoapDeviceMessageCodec codec = new JetLinksCoapDeviceMessageCodec();
 
     DeviceOperator device;
 
@@ -39,10 +39,11 @@ public class JetLinksCoapDeviceMessageCodecTest {
     @Before
     public void init() {
         TestDeviceRegistry registry = new TestDeviceRegistry(new CompositeProtocolSupports(), new StandaloneDeviceMessageBroker());
-        device = registry.register(DeviceInfo.builder()
-                .id("test")
-                .protocol("jetlinks")
-                .build())
+        device = registry
+                .register(DeviceInfo.builder()
+                                    .id("test")
+                                    .protocol("jetlinks")
+                                    .build())
                 .flatMap(operator -> operator.setConfig("secureKey", key).thenReturn(operator))
                 .block();
     }
@@ -59,19 +60,20 @@ public class JetLinksCoapDeviceMessageCodecTest {
 
                     @Override
                     public void handlePOST(CoapExchange exchange) {
-                        codec.decode(new MessageDecodeContext() {
-                            @Nonnull
-                            @Override
-                            public EncodedMessage getMessage() {
-                                return new CoapExchangeMessage(exchange);
-                            }
+                        codec
+                                .decode(new MessageDecodeContext() {
+                                    @Nonnull
+                                    @Override
+                                    public EncodedMessage getMessage() {
+                                        return new CoapExchangeMessage(exchange);
+                                    }
 
-                            @Override
-                            public DeviceOperator getDevice() {
-                                return device;
-                            }
-                        })
-                                .doOnSuccess(messageRef::set)
+                                    @Override
+                                    public DeviceOperator getDevice() {
+                                        return device;
+                                    }
+                                })
+                                .doOnNext(messageRef::set)
                                 .doOnError(Throwable::printStackTrace)
                                 .subscribe();
                     }
@@ -85,7 +87,7 @@ public class JetLinksCoapDeviceMessageCodecTest {
         };
 
         Endpoint endpoint = new CoapEndpoint.Builder()
-                .setPort(12345).build();
+                .setPort(12341).build();
         server.addEndpoint(endpoint);
         server.start();
 
@@ -96,8 +98,8 @@ public class JetLinksCoapDeviceMessageCodecTest {
         Request request = Request.newPost();
         String payload = "{\"data\":1}";
 
-        request.setURI("coap://localhost:12345/test/test/event/event1");
-        request.setPayload(Ciphers.AES.encrypt(payload.getBytes(),key));
+        request.setURI("coap://localhost:12341/test/test/event/event1");
+        request.setPayload(Ciphers.AES.encrypt(payload.getBytes(), key));
 //        request.getOptions().setContentFormat(MediaTypeRegistry.APPLICATION_JSON);
 
         CoapResponse response = coapClient.advanced(request);

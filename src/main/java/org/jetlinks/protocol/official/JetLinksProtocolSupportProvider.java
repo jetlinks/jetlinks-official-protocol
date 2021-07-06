@@ -46,9 +46,9 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
         return Mono.defer(() -> {
             CompositeProtocolSupport support = new CompositeProtocolSupport();
 
-            support.setId("jetlinks.v1.0");
-            support.setName("JetLinks V1.0");
-            support.setDescription("JetLinks Protocol Version 1.0");
+            support.setId("jetlinks.v2.0");
+            support.setName("JetLinks V2.0");
+            support.setDescription("JetLinks Protocol Version 2.0");
 
             support.addAuthenticator(DefaultTransport.MQTT, new JetLinksAuthenticator());
             support.addAuthenticator(DefaultTransport.MQTT_TLS, new JetLinksAuthenticator());
