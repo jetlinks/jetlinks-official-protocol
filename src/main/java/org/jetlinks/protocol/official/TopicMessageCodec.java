@@ -127,6 +127,8 @@ public enum TopicMessageCodec {
     //上报固件版本
     reportFirmware("/*/firmware/report", ReportFirmwareMessage.class),
     //读取固件回复
+    readFirmware("/*/firmware/read", ReadFirmwareMessage.class),
+    //读取固件回复
     readFirmwareReply("/*/firmware/read/reply", ReadFirmwareMessageReply.class),
     //派生物模型上报
     derivedMetadata("/*/metadata/derived", DerivedMetadataMessage.class),
