@@ -2,6 +2,8 @@ package org.jetlinks.protocol.official;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jetlinks.core.message.ChildDeviceMessage;
+import org.jetlinks.core.message.DeviceMessage;
+import org.jetlinks.core.message.event.EventMessage;
 import org.jetlinks.core.message.property.ReportPropertyMessage;
 import org.junit.Test;
 import reactor.test.StepVerifier;
@@ -40,5 +42,22 @@ public class TopicMessageCodecTest {
     public void doTest() {
         testChild(ObjectMappers.JSON_MAPPER);
         testChild(ObjectMappers.CBOR_MAPPER);
+    }
+
+    @Test
+    public void testEvent() {
+        EventMessage eventMessage = new EventMessage();
+        eventMessage.setEvent("test");
+        eventMessage.setDeviceId("test-device");
+        eventMessage.setData("123");
+
+        TopicPayload payload = TopicMessageCodec.encode(ObjectMappers.JSON_MAPPER, eventMessage);
+        assertEquals(payload.getTopic(), "/test-device/event/test");
+
+
+        DeviceMessage msg = TopicMessageCodec
+                .decode(ObjectMappers.JSON_MAPPER, payload.getTopic(), payload.getPayload())
+                .blockLast();
+        assertEquals(msg.toJson(),eventMessage.toJson());
     }
 }

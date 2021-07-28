@@ -24,7 +24,24 @@ public enum TopicMessageCodec {
     //上报属性数据
     reportProperty("/*/properties/report", ReportPropertyMessage.class),
     //事件上报
-    event("/*/event/*", EventMessage.class),
+    event("/*/event/*", EventMessage.class) {
+        @Override
+        Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+            String event = topic[topic.length - 1];
+
+            return Mono.from(super.doDecode(mapper, topic, payload))
+                       .cast(EventMessage.class)
+                       .doOnNext(e -> e.setEvent(event))
+                       .cast(DeviceMessage.class);
+        }
+
+        @Override
+        void refactorTopic(String[] topics, DeviceMessage message) {
+            super.refactorTopic(topics, message);
+            EventMessage event = ((EventMessage) message);
+            topics[topics.length - 1] = String.valueOf(event.getEvent());
+        }
+    },
     //读取属性
     readProperty("/*/properties/read", ReadPropertyMessage.class),
     //读取属性回复
