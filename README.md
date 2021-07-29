@@ -3,3 +3,5 @@
 类名: `org.jetlinks.protocol.official.JetLinksProtocolSupportProvider`
 
 [查看说明](http://doc.jetlinks.cn/basics-guide/jetlinks-protocol-support.html)
+
+MQTT 用户名密码可以使用[生成工具进行生成](jetlinks-mqtt-auth-generator.html)

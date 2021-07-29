@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.bootcdn.net/ajax/libs/blueimp-md5/2.18.0/js/md5.js"></script>
+  <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.js"></script>
+  <title>JetLinks官方协议MQTT用户名密码生成工具</title>
+</head>
+<h3>JetLinks官方协议MQTT用户名密码生成工具</h3>
+<body>
+  secureId: <input type="text" id="secureId" />
+  <br>
+  secureKey: <input type="text" id="secureKey"/>
+  <br>
+  <input type="button" onclick="form_submit()" value="生成用户名密码" />
+  <br>
+  username: <span id="uname"></span>
+  <br>
+  password: <span id="pwd"></span>
+
+  <br>
+  <h3>算法:</h3>
+  <pre>
+var now = new Date().getTime(); //当前时间戳
+var username = secureId+"|"+now; // 拼接用户密码
+var password = md5(username+"|"+secureKey); //使用md5生成摘要
+  </pre>
+  <script>
+    $("#secureId").val(localStorage.getItem("secureId"));
+    $("#secureKey").val(localStorage.getItem("secureKey"));
+    
+    if($("#secureId").val()){
+      form_submit()
+    }
+    setInterval(form_submit,600*1000)
+    function form_submit() {
+      var secureId = $("#secureId").val();
+      var secureKey = $("#secureKey").val();
+      localStorage.setItem("secureId", secureId);
+      localStorage.setItem("secureKey", secureKey);
+      
+      var now = new Date().getTime();
+      var uname = secureId+"|"+now;
+      var pwd = md5(uname+"|"+secureKey);
+      $("#uname").text(uname); 
+      $("#pwd").text(pwd);
+    }
+  </script>
+</body>
+
+</html>
