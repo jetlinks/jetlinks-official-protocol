@@ -1,6 +1,8 @@
 package org.jetlinks.protocol.official;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
 import org.jetlinks.core.device.DeviceConfigKey;
@@ -13,6 +15,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.Nonnull;
+import java.util.Map;
 
 /**
  * <pre>
@@ -54,8 +57,11 @@ public class JetLinksMqttDeviceMessageCodec implements DeviceMessageCodec {
 
     private final Transport transport;
 
+    private final ObjectMapper mapper;
+
     public JetLinksMqttDeviceMessageCodec(Transport transport) {
         this.transport = transport;
+        this.mapper = ObjectMappers.JSON_MAPPER;
     }
 
     public JetLinksMqttDeviceMessageCodec() {
@@ -81,15 +87,14 @@ public class JetLinksMqttDeviceMessageCodec implements DeviceMessageCodec {
             if (message instanceof DeviceMessage) {
                 DeviceMessage deviceMessage = ((DeviceMessage) message);
 
-                TopicPayload convertResult = TopicMessageCodec.encode(ObjectMappers.JSON_MAPPER, deviceMessage);
+                TopicPayload convertResult = TopicMessageCodec.encode(mapper, deviceMessage);
                 if (convertResult == null) {
                     return Mono.empty();
                 }
                 return Mono
                         .justOrEmpty(deviceMessage.getHeader("productId").map(String::valueOf))
                         .switchIfEmpty(context.getDevice(deviceMessage.getDeviceId())
-                                              .flatMap(device -> device
-                                                      .getConfig(DeviceConfigKey.productId))
+                                              .flatMap(device -> device.getSelfConfig(DeviceConfigKey.productId))
                         )
                         .defaultIfEmpty("null")
                         .map(productId -> SimpleMqttMessage
@@ -109,11 +114,42 @@ public class JetLinksMqttDeviceMessageCodec implements DeviceMessageCodec {
     @Override
     public Flux<DeviceMessage> decode(@Nonnull MessageDecodeContext context) {
         MqttMessage message = (MqttMessage) context.getMessage();
-
         byte[] payload = message.payloadAsBytes();
 
         return TopicMessageCodec
-                .decode(ObjectMappers.JSON_MAPPER, TopicMessageCodec.removeProductPath(message.getTopic()), payload);
+                .decode(mapper, TopicMessageCodec.removeProductPath(message.getTopic()), payload)
+                //如果不能直接解码，可能是其他设备功能
+                .switchIfEmpty(FunctionalTopicHandlers
+                                       .handle(context.getDevice(),
+                                               message.getTopic().split("/"),
+                                               payload,
+                                               mapper,
+                                               reply -> doReply(context, reply)))
+                ;
+
+    }
+
+    private Mono<Void> doReply(MessageCodecContext context, TopicPayload reply) {
+
+        if (context instanceof FromDeviceMessageContext) {
+            return ((FromDeviceMessageContext) context)
+                    .getSession()
+                    .send(SimpleMqttMessage
+                                  .builder()
+                                  .topic(reply.getTopic())
+                                  .payload(reply.getPayload())
+                                  .build())
+                    .then();
+        } else if (context instanceof ToDeviceMessageContext) {
+            return ((ToDeviceMessageContext) context)
+                    .sendToDevice(SimpleMqttMessage
+                                          .builder()
+                                          .topic(reply.getTopic())
+                                          .payload(reply.getPayload())
+                                          .build())
+                    .then();
+        }
+        return Mono.empty();
 
     }
 
