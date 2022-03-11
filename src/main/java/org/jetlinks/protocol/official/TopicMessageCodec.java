@@ -11,6 +11,7 @@ import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
 import org.jetlinks.core.message.state.DeviceStateCheckMessage;
 import org.jetlinks.core.message.state.DeviceStateCheckMessageReply;
+import org.jetlinks.core.route.MqttRoute;
 import org.jetlinks.core.utils.TopicUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -19,12 +20,69 @@ import reactor.core.publisher.Mono;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.StringJoiner;
+import java.util.function.Function;
 
 public enum TopicMessageCodec {
     //上报属性数据
-    reportProperty("/*/properties/report", ReportPropertyMessage.class),
+    reportProperty("/*/properties/report",
+                   ReportPropertyMessage.class,
+                   route -> route
+                           .upstream(true)
+                           .downstream(false)
+                           .group("属性上报")
+                           .description("上报物模型属性数据")
+                           .example("{\"properties\":{\"属性ID\":\"属性值\"}}")),
+    //读取属性
+    readProperty("/*/properties/read",
+                 ReadPropertyMessage.class,
+                 route -> route
+                         .upstream(false)
+                         .downstream(true)
+                         .group("读取属性")
+                         .description("平台下发读取物模型属性数据指令")
+                         .example("{\"messageId\":\"消息ID,回复时需要一致.\",\"properties\":[\"属性ID\"]}")),
+    //读取属性回复
+    readPropertyReply("/*/properties/read/reply",
+                      ReadPropertyMessageReply.class,
+                      route -> route
+                              .upstream(true)
+                              .downstream(false)
+                              .group("读取属性")
+                              .description("对平台下发的读取属性指令进行响应")
+                              .example("{\"messageId\":\"消息ID,与读取指令中的ID一致.\",\"properties\":{\"属性ID\":\"属性值\"}}")),
+    //修改属性
+    writeProperty("/*/properties/write",
+                  WritePropertyMessage.class,
+                  route -> route
+                          .upstream(false)
+                          .downstream(true)
+                          .group("修改属性")
+                          .description("平台下发修改物模型属性数据指令")
+                          .example("{\"messageId\":\"消息ID,回复时需要一致.\",\"properties\":{\"属性ID\":\"属性值\"}}")),
+    //修改属性回复
+    writePropertyReply("/*/properties/write/reply",
+                       WritePropertyMessageReply.class,
+                       route -> route
+                               .upstream(true)
+                               .downstream(false)
+                               .group("修改属性")
+                               .description("对平台下发的修改属性指令进行响应")
+                               .example("{\"messageId\":\"消息ID,与修改指令中的ID一致.\",\"properties\":{\"属性ID\":\"属性值\"}}")),
     //事件上报
-    event("/*/event/*", EventMessage.class) {
+    event("/*/event/*",
+          EventMessage.class,
+          route -> route
+                  .upstream(true)
+                  .downstream(false)
+                  .group("事件上报")
+                  .description("上报物模型事件数据")
+                  .example("{\"data\":{\"key\":\"value\"}}")) {
+        @Override
+        protected void transMqttTopic(String[] topic) {
+            topic[topic.length - 1] = "{eventId:事件ID}";
+        }
+
         @Override
         Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
             String event = topic[topic.length - 1];
@@ -42,20 +100,42 @@ public enum TopicMessageCodec {
             topics[topics.length - 1] = String.valueOf(event.getEvent());
         }
     },
-    //读取属性
-    readProperty("/*/properties/read", ReadPropertyMessage.class),
-    //读取属性回复
-    readPropertyReply("/*/properties/read/reply", ReadPropertyMessageReply.class),
-    //修改属性
-    writeProperty("/*/properties/write", WritePropertyMessage.class),
-    //修改属性回复
-    writePropertyReply("/*/properties/write/reply", WritePropertyMessageReply.class),
+
     //调用功能
-    functionInvoke("/*/function/invoke", FunctionInvokeMessage.class),
+    functionInvoke("/*/function/invoke",
+                   FunctionInvokeMessage.class,
+                   route -> route
+                           .upstream(false)
+                           .downstream(true)
+                           .group("调用功能")
+                           .description("平台下发功能调用指令")
+                           .example("{\"messageId\":\"消息ID,回复时需要一致.\"," +
+                                            "\"functionId\":\"功能标识\"," +
+                                            "\"inputs\":[{\"name\":\"参数名\",\"value\":\"参数值\"}]}")),
     //调用功能回复
-    functionInvokeReply("/*/function/invoke/reply", FunctionInvokeMessageReply.class),
+    functionInvokeReply("/*/function/invoke/reply",
+                        FunctionInvokeMessageReply.class,
+                        route -> route
+                                .upstream(true)
+                                .downstream(false)
+                                .group("调用功能")
+                                .description("设备响应平台下发的功能调用指令")
+                                .example("{\"messageId\":\"消息ID,与下发指令中的messageId一致.\"," +
+                                                 "\"output\":\"输出结果,格式与物模型中定义的类型一致\"")),
     //子设备消息
-    child("/*/child/*/**", ChildDeviceMessage.class) {
+    child("/*/child/*/**",
+          ChildDeviceMessage.class,
+          route -> route
+                  .upstream(true)
+                  .downstream(true)
+                  .group("子设备消息")
+                  .description("网关上报或者平台下发子设备消息")) {
+        @Override
+        protected void transMqttTopic(String[] topic) {
+            topic[topic.length - 1] = "{#:子设备相应操作的topic}";
+            topic[topic.length - 2] = "{childDeviceId:子设备ID}";
+        }
+
         @Override
         public Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
             String[] _topic = Arrays.copyOfRange(topic, 2, topic.length);
@@ -91,7 +171,19 @@ public enum TopicMessageCodec {
 
         }
     }, //子设备消息回复
-    childReply("/*/child-reply/*/**", ChildDeviceMessageReply.class) {
+    childReply("/*/child-reply/*/**",
+               ChildDeviceMessageReply.class,
+               route -> route
+                       .upstream(true)
+                       .downstream(true)
+                       .group("子设备消息")
+                       .description("网关回复平台下发给子设备的指令结果")) {
+        @Override
+        protected void transMqttTopic(String[] topic) {
+            topic[topic.length - 1] = "{#:子设备相应操作的topic}";
+            topic[topic.length - 2] = "{childDeviceId:子设备ID}";
+        }
+
         @Override
         public Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
             String[] _topic = Arrays.copyOfRange(topic, 2, topic.length);
@@ -128,7 +220,13 @@ public enum TopicMessageCodec {
         }
     },
     //更新标签
-    updateTag("/*/tags", UpdateTagMessage.class),
+    updateTag("/*/tags",
+              UpdateTagMessage.class,
+              route -> route.upstream(true)
+                            .downstream(false)
+                            .group("更新标签")
+                            .description("更新标签数据")
+                            .example("{\"tags\":{\"key\",\"value\"}}")),
     //注册
     register("/*/register", DeviceRegisterMessage.class),
     //注销
@@ -174,13 +272,47 @@ public enum TopicMessageCodec {
     stateCheckReply("/*/state-check/reply", DeviceStateCheckMessageReply.class),
     ;
 
-    TopicMessageCodec(String topic, Class<? extends DeviceMessage> type) {
+    TopicMessageCodec(String topic,
+                      Class<? extends DeviceMessage> type,
+                      Function<MqttRoute.Builder, MqttRoute.Builder> routeCustom) {
         this.pattern = topic.split("/");
         this.type = type;
+        this.route = routeCustom.apply(toRoute()).build();
+    }
+
+    TopicMessageCodec(String topic,
+                      Class<? extends DeviceMessage> type) {
+        this.pattern = topic.split("/");
+        this.type = type;
+        this.route = null;
     }
 
     private final String[] pattern;
+    private final MqttRoute route;
     private final Class<? extends DeviceMessage> type;
+
+    protected void transMqttTopic(String[] topic) {
+
+    }
+
+    @SneakyThrows
+    private MqttRoute.Builder toRoute() {
+        String[] topics = new String[1 + pattern.length];
+        topics[0] = "{productId:产品ID}";
+        System.arraycopy(pattern, 0, topics, 1, pattern.length);
+        topics[1] = "{deviceId:设备ID}";
+        transMqttTopic(topics);
+        StringJoiner joiner = new StringJoiner("/", "/", "");
+        for (String topic : topics) {
+            joiner.add(topic);
+        }
+        return MqttRoute
+                .builder(joiner.toString());
+    }
+
+    public MqttRoute getRoute() {
+        return route;
+    }
 
     public static Flux<DeviceMessage> decode(ObjectMapper mapper, String[] topics, byte[] payload) {
         return Mono

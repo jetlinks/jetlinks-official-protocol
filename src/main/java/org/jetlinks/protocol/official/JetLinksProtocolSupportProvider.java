@@ -10,17 +10,22 @@ import org.jetlinks.core.metadata.types.StringType;
 import org.jetlinks.core.spi.ProtocolSupportProvider;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.supports.official.JetLinksDeviceMetadataCodec;
+import org.springframework.core.io.ClassPathResource;
 import reactor.core.publisher.Mono;
+
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider {
 
     private static final DefaultConfigMetadata mqttConfig = new DefaultConfigMetadata(
             "MQTT认证配置"
             , "MQTT认证时需要的配置,mqtt用户名,密码算法:\n" +
-            "username=secureId|timestamp\n" +
-            "password=md5(secureId|timestamp|secureKey)\n" +
-            "\n" +
-            "timestamp为时间戳,与服务时间不能相差5分钟")
+                    "username=secureId|timestamp\n" +
+                    "password=md5(secureId|timestamp|secureKey)\n" +
+                    "\n" +
+                    "timestamp为时间戳,与服务时间不能相差5分钟")
             .add("secureId", "secureId", "密钥ID", new StringType())
             .add("secureKey", "secureKey", "密钥KEY", new PasswordType());
 
@@ -46,9 +51,19 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
         return Mono.defer(() -> {
             CompositeProtocolSupport support = new CompositeProtocolSupport();
 
-            support.setId("jetlinks.v2.0");
-            support.setName("JetLinks V2.0");
-            support.setDescription("JetLinks Protocol Version 2.0");
+            support.setId("jetlinks.v3.0");
+            support.setName("JetLinks V3.0");
+            support.setDescription("JetLinks Protocol Version 3.0");
+
+            support.addRoutes(DefaultTransport.MQTT, Arrays
+                    .stream(TopicMessageCodec.values())
+                    .map(TopicMessageCodec::getRoute)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList())
+            );
+            support.setDocument(DefaultTransport.MQTT,
+                                "document-mqtt.md",
+                                JetLinksProtocolSupportProvider.class.getClassLoader());
 
             support.addAuthenticator(DefaultTransport.MQTT, new JetLinksAuthenticator());
             support.addAuthenticator(DefaultTransport.MQTT_TLS, new JetLinksAuthenticator());

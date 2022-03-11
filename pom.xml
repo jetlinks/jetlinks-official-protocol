@@ -6,17 +6,17 @@
 
     <groupId>org.jetlinks</groupId>
     <artifactId>jetlinks-official-protocol</artifactId>
-    <version>2.0-SNAPSHOT</version>
+    <version>3.0-SNAPSHOT</version>
 
     <name>JetLinks</name>
-    <url>http://jetlinks.org</url>
+    <url>https://jetlinks.org</url>
     <inceptionYear>2019</inceptionYear>
     <description>JetLinks 物联网平台</description>
 
     <licenses>
         <license>
             <name>The Apache License, Version 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
         </license>
     </licenses>
 
@@ -158,7 +158,7 @@
         <dependency>
             <groupId>org.jetlinks</groupId>
             <artifactId>jetlinks-supports</artifactId>
-            <version>1.1.7</version>
+            <version>1.2.0-SNAPSHOT</version>
         </dependency>
 
         <dependency>
