@@ -297,9 +297,9 @@ public enum TopicMessageCodec {
 
     @SneakyThrows
     private MqttRoute.Builder toRoute() {
-        String[] topics = new String[1 + pattern.length];
+        String[] topics = new String[pattern.length];
+        System.arraycopy(pattern, 0, topics, 0, pattern.length);
         topics[0] = "{productId:产品ID}";
-        System.arraycopy(pattern, 0, topics, 1, pattern.length);
         topics[1] = "{deviceId:设备ID}";
         transMqttTopic(topics);
         StringJoiner joiner = new StringJoiner("/", "/", "");

@@ -1,10 +1,12 @@
 package org.jetlinks.protocol.official;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jetlinks.core.codec.defaults.TopicPayloadCodec;
 import org.jetlinks.core.message.ChildDeviceMessage;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.event.EventMessage;
 import org.jetlinks.core.message.property.ReportPropertyMessage;
+import org.jetlinks.core.route.Route;
 import org.junit.Test;
 import reactor.test.StepVerifier;
 
@@ -39,6 +41,15 @@ public class TopicMessageCodecTest {
     }
 
     @Test
+    public void testRoute() {
+        for (TopicMessageCodec value : TopicMessageCodec.values()) {
+            Route route = value.getRoute();
+            if (null != route)
+                System.out.println(route.getAddress());
+        }
+    }
+
+    @Test
     public void doTest() {
         testChild(ObjectMappers.JSON_MAPPER);
         testChild(ObjectMappers.CBOR_MAPPER);
@@ -58,6 +69,6 @@ public class TopicMessageCodecTest {
         DeviceMessage msg = TopicMessageCodec
                 .decode(ObjectMappers.JSON_MAPPER, payload.getTopic(), payload.getPayload())
                 .blockLast();
-        assertEquals(msg.toJson(),eventMessage.toJson());
+        assertEquals(msg.toJson(), eventMessage.toJson());
     }
 }

@@ -395,6 +395,10 @@ public class JetLinksMqttDeviceMessageCodecTest {
 
     }
 
+    public void testTopic(){
+
+    }
+
     public MessageEncodeContext createMessageContext(Message message) {
         System.out.println(message.toString());
         return new MessageEncodeContext() {
