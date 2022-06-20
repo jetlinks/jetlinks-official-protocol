@@ -262,9 +262,15 @@ public enum TopicMessageCodec {
     //断开连接回复
     disconnectReply("/*/disconnect/reply", DisconnectDeviceMessageReply.class),
     //上线
-    connect("/*/online", DeviceOnlineMessage.class),
+    connect("/*/online", DeviceOnlineMessage.class, builder -> builder
+            .upstream(true)
+            .group("状态管理")
+            .description("设备上线")),
     //离线
-    offline("/*/offline", DeviceOfflineMessage.class),
+    offline("/*/offline", DeviceOfflineMessage.class, builder -> builder
+            .upstream(true)
+            .group("状态管理")
+            .description("设备离线")),
     //日志
     log("/*/log", DeviceLogMessage.class),
     //状态检查

@@ -66,14 +66,11 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
                                 JetLinksProtocolSupportProvider.class.getClassLoader());
 
             support.addAuthenticator(DefaultTransport.MQTT, new JetLinksAuthenticator());
-            support.addAuthenticator(DefaultTransport.MQTT_TLS, new JetLinksAuthenticator());
 
             support.setMetadataCodec(new JetLinksDeviceMetadataCodec());
 
             support.addConfigMetadata(DefaultTransport.MQTT, mqttConfig);
-            support.addConfigMetadata(DefaultTransport.MQTT_TLS, mqttConfig);
             support.addConfigMetadata(DefaultTransport.CoAP, coapConfig);
-            support.addConfigMetadata(DefaultTransport.CoAP_DTLS, coapDTLSConfig);
 
             support.addMessageCodecSupport(new JetLinksMqttDeviceMessageCodec(DefaultTransport.MQTT));
             support.addMessageCodecSupport(new JetLinksMqttDeviceMessageCodec(DefaultTransport.MQTT_TLS));
