@@ -10,6 +10,10 @@ import org.jetlinks.core.message.codec.CoapMessage;
 import org.jetlinks.core.message.codec.DefaultTransport;
 import org.jetlinks.core.message.codec.MessageDecodeContext;
 import org.jetlinks.core.message.codec.Transport;
+import org.jetlinks.core.metadata.DefaultConfigMetadata;
+import org.jetlinks.core.metadata.DeviceConfigScope;
+import org.jetlinks.core.metadata.types.EnumType;
+import org.jetlinks.core.metadata.types.PasswordType;
 import org.jetlinks.protocol.official.cipher.Ciphers;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
@@ -20,6 +24,13 @@ import java.util.function.Consumer;
 
 @Slf4j
 public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCodec {
+    public static final DefaultConfigMetadata coapConfig = new DefaultConfigMetadata(
+            "CoAP认证配置",
+            "使用CoAP进行数据上报时,需要对数据进行加密:" +
+                    "encrypt(payload,secureKey);")
+            .add("encAlg", "加密算法", "加密算法", new EnumType()
+                    .addElement(EnumType.Element.of("AES", "AES加密(ECB,PKCS#5)", "加密模式:ECB,填充方式:PKCS#5")), DeviceConfigScope.product)
+            .add("secureKey", "密钥", "16位密钥KEY", new PasswordType());
 
     @Override
     public Transport getSupportTransport() {

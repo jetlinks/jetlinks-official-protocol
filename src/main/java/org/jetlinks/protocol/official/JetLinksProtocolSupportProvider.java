@@ -3,19 +3,21 @@ package org.jetlinks.protocol.official;
 import org.jetlinks.core.defaults.CompositeProtocolSupport;
 import org.jetlinks.core.message.codec.DefaultTransport;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
-import org.jetlinks.core.metadata.DeviceConfigScope;
-import org.jetlinks.core.metadata.types.EnumType;
 import org.jetlinks.core.metadata.types.PasswordType;
 import org.jetlinks.core.metadata.types.StringType;
+import org.jetlinks.core.route.HttpRoute;
 import org.jetlinks.core.spi.ProtocolSupportProvider;
 import org.jetlinks.core.spi.ServiceContext;
+import org.jetlinks.protocol.official.http.JetLinksHttpDeviceMessageCodec;
 import org.jetlinks.supports.official.JetLinksDeviceMetadataCodec;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import reactor.core.publisher.Mono;
 
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider {
 
@@ -28,22 +30,6 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
                     "timestamp为时间戳,与服务时间不能相差5分钟")
             .add("secureId", "secureId", "密钥ID", new StringType())
             .add("secureKey", "secureKey", "密钥KEY", new PasswordType());
-
-    private static final DefaultConfigMetadata coapConfig = new DefaultConfigMetadata(
-            "CoAP认证配置",
-            "使用CoAP进行数据上报时,需要对数据进行加密:" +
-                    "encrypt(payload,secureKey);")
-            .add("encAlg", "加密算法", "加密算法", new EnumType()
-                    .addElement(EnumType.Element.of("AES", "AES加密(ECB,PKCS#5)", "加密模式:ECB,填充方式:PKCS#5")), DeviceConfigScope.product)
-            .add("secureKey", "密钥", "16位密钥KEY", new PasswordType());
-
-    private static final DefaultConfigMetadata coapDTLSConfig = new DefaultConfigMetadata(
-            "CoAP DTLS配置",
-            "使用CoAP DTLS 进行数据上报需要先进行签名认证获取token.\n" +
-                    "之后上报数据需要在Option中携带token信息. \n" +
-                    "自定义Option: 2110,sign ; 2111,token ")
-            .add("secureKey", "密钥", "认证签名密钥", new PasswordType());
-
 
     @Override
     public Mono<CompositeProtocolSupport> create(ServiceContext context) {
@@ -65,19 +51,46 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
                                 "document-mqtt.md",
                                 JetLinksProtocolSupportProvider.class.getClassLoader());
 
+            support.addRoutes(DefaultTransport.HTTP, Stream
+                    .of(TopicMessageCodec.reportProperty,
+                        TopicMessageCodec.event,
+                        TopicMessageCodec.online,
+                        TopicMessageCodec.offline)
+                    .map(TopicMessageCodec::getRoute)
+                    .filter(route -> route != null && route.isUpstream())
+                    .map(route -> HttpRoute
+                            .builder()
+                            .address(route.getTopic())
+                            .group(route.getGroup())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .method(HttpMethod.POST)
+                            .description(route.getDescription())
+                            .example(route.getExample())
+                            .build())
+                    .collect(Collectors.toList())
+            );
+
+            support.setDocument(DefaultTransport.HTTP,
+                                "document-http.md",
+                                JetLinksProtocolSupportProvider.class.getClassLoader());
+
+
             support.addAuthenticator(DefaultTransport.MQTT, new JetLinksAuthenticator());
 
             support.setMetadataCodec(new JetLinksDeviceMetadataCodec());
 
             support.addConfigMetadata(DefaultTransport.MQTT, mqttConfig);
-            support.addConfigMetadata(DefaultTransport.CoAP, coapConfig);
+            support.addConfigMetadata(DefaultTransport.CoAP, JetLinksCoapDeviceMessageCodec.coapConfig);
+            support.addConfigMetadata(DefaultTransport.HTTP, JetLinksHttpDeviceMessageCodec.httpConfig);
 
-            support.addMessageCodecSupport(new JetLinksMqttDeviceMessageCodec(DefaultTransport.MQTT));
-            support.addMessageCodecSupport(new JetLinksMqttDeviceMessageCodec(DefaultTransport.MQTT_TLS));
+            //MQTT
+            support.addMessageCodecSupport(new JetLinksMqttDeviceMessageCodec());
 
+            //HTTP
+            support.addMessageCodecSupport(new JetLinksHttpDeviceMessageCodec());
+
+            //CoAP
             support.addMessageCodecSupport(new JetLinksCoapDeviceMessageCodec());
-            support.addMessageCodecSupport(new JetLinksCoapDTLSDeviceMessageCodec());
-
 
             return Mono.just(support);
         });

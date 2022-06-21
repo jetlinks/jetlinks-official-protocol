@@ -12,6 +12,8 @@ import org.jetlinks.core.message.codec.CoapMessage;
 import org.jetlinks.core.message.codec.DefaultTransport;
 import org.jetlinks.core.message.codec.MessageDecodeContext;
 import org.jetlinks.core.message.codec.Transport;
+import org.jetlinks.core.metadata.DefaultConfigMetadata;
+import org.jetlinks.core.metadata.types.PasswordType;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
@@ -22,6 +24,15 @@ import java.util.function.Consumer;
 
 @Slf4j
 public class JetLinksCoapDTLSDeviceMessageCodec extends AbstractCoapDeviceMessageCodec {
+
+
+    private static final DefaultConfigMetadata coapDTLSConfig = new DefaultConfigMetadata(
+            "CoAP DTLS配置",
+            "使用CoAP DTLS 进行数据上报需要先进行签名认证获取token.\n" +
+                    "之后上报数据需要在Option中携带token信息. \n" +
+                    "自定义Option: 2110,sign ; 2111,token ")
+            .add("secureKey", "密钥", "认证签名密钥", new PasswordType());
+
 
     @Override
     public Transport getSupportTransport() {
