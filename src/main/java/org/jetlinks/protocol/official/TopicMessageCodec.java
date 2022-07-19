@@ -233,6 +233,8 @@ public enum TopicMessageCodec {
     unregister("/*/unregister", DeviceUnRegisterMessage.class),
     //更新固件消息
     upgradeFirmware("/*/firmware/upgrade", UpgradeFirmwareMessage.class),
+    //更新固件消息回复
+    upgradeFirmwareReply("/*/firmware/upgrade/reply", UpgradeFirmwareMessageReply.class),
     //更新固件升级进度消息
     upgradeProcessFirmware("/*/firmware/upgrade/progress", UpgradeFirmwareProgressMessage.class),
     //拉取固件
