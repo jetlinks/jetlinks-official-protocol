@@ -9,6 +9,7 @@ import org.jetlinks.core.route.HttpRoute;
 import org.jetlinks.core.spi.ProtocolSupportProvider;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.protocol.official.http.JetLinksHttpDeviceMessageCodec;
+import org.jetlinks.protocol.official.tcp.TcpDeviceMessageCodec;
 import org.jetlinks.supports.official.JetLinksDeviceMetadataCodec;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -80,16 +81,21 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
             support.setMetadataCodec(new JetLinksDeviceMetadataCodec());
 
             support.addConfigMetadata(DefaultTransport.MQTT, mqttConfig);
-            support.addConfigMetadata(DefaultTransport.CoAP, JetLinksCoapDeviceMessageCodec.coapConfig);
-            support.addConfigMetadata(DefaultTransport.HTTP, JetLinksHttpDeviceMessageCodec.httpConfig);
+
+
+            //TCP
+            support.addConfigMetadata(DefaultTransport.TCP, TcpDeviceMessageCodec.tcpConfig);
+            support.addMessageCodecSupport(new TcpDeviceMessageCodec());
 
             //MQTT
             support.addMessageCodecSupport(new JetLinksMqttDeviceMessageCodec());
 
             //HTTP
+            support.addConfigMetadata(DefaultTransport.HTTP, JetLinksHttpDeviceMessageCodec.httpConfig);
             support.addMessageCodecSupport(new JetLinksHttpDeviceMessageCodec());
 
             //CoAP
+            support.addConfigMetadata(DefaultTransport.CoAP, JetLinksCoapDeviceMessageCodec.coapConfig);
             support.addMessageCodecSupport(new JetLinksCoapDeviceMessageCodec());
 
             return Mono.just(support);

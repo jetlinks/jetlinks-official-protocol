@@ -315,7 +315,8 @@ public enum TopicMessageCodec {
             joiner.add(topic);
         }
         return MqttRoute
-                .builder(joiner.toString());
+                .builder(joiner.toString())
+                .qos(1);
     }
 
     public MqttRoute getRoute() {

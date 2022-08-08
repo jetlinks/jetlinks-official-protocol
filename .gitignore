@@ -25,3 +25,4 @@ hs_err_pid*
 /upload
 /ui/upload/
 !/package/**
+dependency-reduced-pom.xml

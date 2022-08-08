@@ -122,6 +122,52 @@
                 </snapshotRepository>
             </distributionManagement>
         </profile>
+        <profile>
+            <id>all-in-one</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-shade-plugin</artifactId>
+                        <version>3.1.1</version>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                                <configuration>
+                                    <filters>
+                                        <filter>
+                                            <artifact>*:*</artifact>
+                                            <excludes>
+                                                <exclude>META-INF/*.SF</exclude>
+                                                <exclude>META-INF/*.DSA</exclude>
+                                                <exclude>META-INF/*.RSA</exclude>
+                                            </excludes>
+                                        </filter>
+                                    </filters>
+                                    <transformers>
+                                        <transformer
+                                                implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <!-- 设置主类  -->
+                                            <mainClass>org.jetlinks.protocol.official.tcp.TcpDeviceMessageCodec</mainClass>
+                                        </transformer>
+                                    </transformers>
+<!--                                    <artifactSet>-->
+<!--                                        <includes>-->
+<!--                                            &lt;!&ndash;   添加需要打包在一起的第三方依赖信息  &ndash;&gt;-->
+<!--                                            &lt;!&ndash;  <include>com.domain:*</include>  &ndash;&gt;-->
+<!--                                        </includes>-->
+<!--                                    </artifactSet>-->
+                                </configuration>
+                            </execution>
+
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 
     <build>
@@ -200,6 +246,12 @@
             <artifactId>logback-classic</artifactId>
             <version>1.2.11</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-core</artifactId>
+            <version>4.3.1</version>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 
