@@ -15,6 +15,7 @@ import org.jetlinks.core.message.property.*;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
@@ -59,16 +60,22 @@ public enum BinaryMessageType {
 
     private static class MsgIdHolder {
         private int msgId = 0;
-        private final BiMap<Integer, String> cached = HashBiMap.create();
+        private final Map<Integer, String> cached = CacheBuilder
+                .newBuilder()
+                .expireAfterWrite(Duration.ofSeconds(30))
+                .<Integer, String> build()
+                .asMap();
 
         public synchronized int next(String id) {
             if (id == null) {
                 return -1;
             }
-            if (msgId++ < 0) {
-                msgId = 0;
-            }
-            cached.put(msgId, id);
+            do {
+                if (msgId++ < 0) {
+                    msgId = 0;
+                }
+            } while (cached.putIfAbsent(msgId, id) != null);
+
             return msgId;
         }
 
