@@ -20,6 +20,7 @@ import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 public enum BinaryMessageType {
+    keepalive(null, null),
 
     online(DeviceOnlineMessage.class, BinaryDeviceOnlineMessage::new),
 
@@ -63,10 +64,10 @@ public enum BinaryMessageType {
         private final Map<Integer, String> cached = CacheBuilder
                 .newBuilder()
                 .expireAfterWrite(Duration.ofSeconds(30))
-                .<Integer, String> build()
+                .<Integer, String>build()
                 .asMap();
 
-        public synchronized int next(String id) {
+        public int next(String id) {
             if (id == null) {
                 return -1;
             }
@@ -96,6 +97,15 @@ public enum BinaryMessageType {
     public static ByteBuf write(DeviceMessage message, ByteBuf data) {
         int msgId = takeHolder(message.getDeviceId()).next(message.getMessageId());
         return write(message, msgId, data);
+    }
+
+    public static ByteBuf write(BinaryMessageType type, ByteBuf data) {
+        // 第0个字节是消息类型
+        data.writeByte(type.ordinal());
+        // 0-4字节 时间戳
+        data.writeLong(System.currentTimeMillis());
+
+        return data;
     }
 
     public static ByteBuf write(DeviceMessage message, int msgId, ByteBuf data) {
