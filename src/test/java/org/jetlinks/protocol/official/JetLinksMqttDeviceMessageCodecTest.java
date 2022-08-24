@@ -309,17 +309,26 @@ public class JetLinksMqttDeviceMessageCodecTest {
 
     @Test
     public void testPropertiesReport() {
-        Message message = codec.decode(createMessageContext(SimpleMqttMessage.builder()
-                                                                             .topic("/product1/device1/properties/report")
-                                                                             .payload(Unpooled.wrappedBuffer("{\"messageId\":\"test\",\"properties\":{\"sn\":\"test\"}}"
-                                                                                                                     .getBytes()))
-                                                                             .build())).blockFirst();
+        Message message = codec.decode(createMessageContext(
+                                       SimpleMqttMessage
+                                               .builder()
+                                               .topic("/product1/device1/properties/report")
+                                               .payload(Unpooled.wrappedBuffer(("{\"messageId\":\"test\"," +
+                                                       "\"properties\":{\"sn\":\"test\"}," +
+                                                       "\"propertySourceTimes\":{\"sn\":10086}" +
+                                                       "}").getBytes()))
+                                               .build()))
+                               .blockFirst();
 
         Assert.assertTrue(message instanceof ReportPropertyMessage);
         ReportPropertyMessage reply = ((ReportPropertyMessage) message);
+        Assert.assertNotNull(reply.getPropertySourceTimes());
+        Assert.assertEquals(reply.getPropertySourceTimes().get("sn"), Long.valueOf(10086L));
+
         Assert.assertEquals(reply.getDeviceId(), "device1");
         Assert.assertEquals(reply.getMessageId(), "test");
         Assert.assertEquals(reply.getProperties(), Collections.singletonMap("sn", "test"));
+
         System.out.println(reply);
     }
 
@@ -390,12 +399,12 @@ public class JetLinksMqttDeviceMessageCodecTest {
 
         Assert.assertNotNull(currentReply);
 
-        Assert.assertEquals(((MqttMessage) currentReply).getTopic(),"/product1/device1/time-sync/reply");
+        Assert.assertEquals(((MqttMessage) currentReply).getTopic(), "/product1/device1/time-sync/reply");
         Assert.assertTrue(currentReply.payloadAsString().contains("timestamp"));
 
     }
 
-    public void testTopic(){
+    public void testTopic() {
 
     }
 
