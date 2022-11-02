@@ -67,19 +67,24 @@ public class JetLinksHttpDeviceMessageCodec implements DeviceMessageCodec {
         return Mono.empty();
     }
 
-    private static final SimpleHttpResponseMessage unauthorized = SimpleHttpResponseMessage
-            .builder()
-            .contentType(MediaType.APPLICATION_JSON)
-            .body("{\"success\":true,\"code\":\"unauthorized\"}")
-            .status(401)
-            .build();
+    private static SimpleHttpResponseMessage unauthorized() {
+        return SimpleHttpResponseMessage
+                .builder()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"success\":true,\"code\":\"unauthorized\"}")
+                .status(401)
+                .build();
+    }
 
-    private static final SimpleHttpResponseMessage badRequest = SimpleHttpResponseMessage
-            .builder()
-            .contentType(MediaType.APPLICATION_JSON)
-            .body("{\"success\":false,\"code\":\"bad_request\"}")
-            .status(400)
-            .build();
+
+    private static SimpleHttpResponseMessage badRequest() {
+        return SimpleHttpResponseMessage
+                .builder()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"success\":false,\"code\":\"bad_request\"}")
+                .status(400)
+                .build();
+    }
 
     @Nonnull
     @Override
@@ -91,14 +96,14 @@ public class JetLinksHttpDeviceMessageCodec implements DeviceMessageCodec {
         Header header = message.getHeader(HttpHeaders.AUTHORIZATION).orElse(null);
         if (header == null || header.getValue() == null || header.getValue().length == 0) {
             return message
-                    .response(unauthorized)
+                    .response(unauthorized())
                     .thenMany(Mono.empty());
         }
 
         String[] token = header.getValue()[0].split(" ");
         if (token.length == 1) {
             return message
-                    .response(unauthorized)
+                    .response(unauthorized())
                     .thenMany(Mono.empty());
         }
         String basicToken = token[1];
@@ -106,7 +111,7 @@ public class JetLinksHttpDeviceMessageCodec implements DeviceMessageCodec {
         String[] paths = TopicMessageCodec.removeProductPath(message.getPath());
         if (paths.length < 1) {
             return message
-                    .response(badRequest)
+                    .response(badRequest())
                     .thenMany(Mono.empty());
         }
         String deviceId = paths[1];
@@ -122,7 +127,7 @@ public class JetLinksHttpDeviceMessageCodec implements DeviceMessageCodec {
                         handler = message.ok("{\"success\":true}");
                     } else {
                         return message
-                                .response(unauthorized)
+                                .response(unauthorized())
                                 .then(Mono.error(new BusinessException("设备[" + deviceId + "]未激活或token [" + basicToken + "]错误")));
                     }
                     return handler.thenMany(flux);
