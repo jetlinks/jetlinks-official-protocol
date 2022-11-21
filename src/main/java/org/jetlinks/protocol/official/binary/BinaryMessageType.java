@@ -14,6 +14,7 @@ import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
@@ -194,5 +195,44 @@ public enum BinaryMessageType {
         throw new UnsupportedOperationException("unsupported device message " + message.getMessageType());
     }
 
+    public static Map<Integer,DeviceMessage> readServer(ByteBuf data) {
 
+        long i = data.readByte();
+        i = data.readByte();
+        i = data.readByte();
+        i = data.readByte();
+
+
+        //第0个字节是消息类型
+        BinaryMessageType type = VALUES[data.readByte()];
+        if (type.forTcp == null) {
+            return null;
+        }
+        // 1-4字节 时间戳
+        long timestamp = data.readLong();
+        // 5-6字节 消息序号
+        int msgId = data.readUnsignedShort();
+        // 7... 字节 设备ID
+        String deviceId = (String) DataType.readFrom(data);
+        if (deviceId == null) {
+            deviceId = "1";
+        }
+
+        // 创建消息对象
+        BinaryMessage<DeviceMessage> tcp = type.forTcp.get();
+
+
+        //从ByteBuf读取
+        tcp.read(data);
+
+
+        DeviceMessage message = tcp.getMessage();
+        message.thingId(DeviceThingType.device, deviceId);
+        message.timestamp(timestamp);
+        Map<Integer,DeviceMessage> map = new HashMap<>();
+        map.put(msgId,message);
+
+
+        return map;
+    }
 }
