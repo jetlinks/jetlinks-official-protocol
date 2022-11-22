@@ -3,121 +3,172 @@ package org.jetlinks.protocol.official.tcp;
 import com.alibaba.fastjson.JSONObject;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.NetSocket;
+import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DeviceOnlineMessage;
 import org.jetlinks.core.message.property.ReportPropertyMessage;
 import org.jetlinks.protocol.official.binary.BinaryDeviceOnlineMessage;
 import org.jetlinks.protocol.official.binary.BinaryMessageType;
+import org.jetlinks.protocol.official.binary.ServerReplyRead;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
-import java.util.Scanner;
+import java.util.Map;
 
 public class TcpDemo {
+    NetSocket netSocket;
+
+    Integer port = 8800;
+    String host = "127.0.0.1";
+    String key = null;
+    String deviceId = "6666";
+    Integer msgID = 1;
+    String deLimit = "&&&&";
+    Integer msgLength = 50;
+
+
     NetSocket socket;
-    JSONObject object = new JSONObject();
 
     @BeforeEach
-    //连接所需参数
-    public void init() {
-        // 设备id
-        object.put("deviceId", "6666");
-        // ip
-        object.put("host", "127.0.0.1");
-        // 端口
-        object.put("port", 8800);
-        // key
-        object.put("key", "secureKey");
-        // 沾拆包类型  0-不处理 1-分隔符 2-固定长度
-        object.put("type", 0);
-        // 固定消息长度
-        object.put("msgLength", 50);
-        // 分隔符
-        object.put("deLimit", "&&&");
+    public void init() throws InterruptedException {
+        TcpClient tcpClientTest = new TcpClient();
+        Vertx.vertx().deployVerticle(tcpClientTest);
+        Thread.currentThread().sleep(3000);
     }
 
-    /**
-     *   1.采用 TCP协议 固定长度方式 上报温度
-     *   2.在网络组件中配置沾拆包规则，选择固定长度，长度设为50
-     *   3.程序运行后： 1) 等待控制打印提示后 输入任意字符 进行设备上线
-     *                2) 当服务器打印服务器消息后，在设备列表中，对应设备显示已上线状态
-     *                3) 再次输入任意字符，会向服务器发送一条长消息，包含3个上报温度的消息，可在设备日志中查看3个消息
+    /*
+    *   设备上报
+    *   站拆包处理 ： 固定长度
+    *   在对应TCP网络组件 选择沾拆包规则，长度值50
+    */
+    @Test
+    void testPropertyReport() throws InterruptedException {
+        // 先进行设备上线
+        online(true,false);
+        Thread.currentThread().sleep(2000);
+
+        float temp = (float) (Math.random() * 1000);
+        ReportPropertyMessage message = new ReportPropertyMessage();
+        message.setDeviceId(deviceId);
+        message.setMessageId("testReport");
+        //温度
+        message.setProperties(Collections.singletonMap("tem", temp));
+        System.out.println("向服务器发送一条消息  一次发送3个完整消息  上报3个温度");
+        //构建消息 发送一条消息 上报3个温度
+        Buffer bufferOne = createMessage(message,false,1,true);
+        for (int i = 0; i < 2; i++) {
+            message.setProperties(Collections.singletonMap("tem", (float) (Math.random() * 1000)));
+            bufferOne.appendBuffer(createMessage(message,false,1,true));
+        }
+        //向服务器发送一条消息  一次发送3个完整消息  上报3个温度
+        socket.write(bufferOne);
+        System.out.println("---------------------上报温度完成，本次成功上报三个温度---------------------");
+
+        System.out.println("向服务器发送2条不完整消息 上报3个温度：");
+        // 构建 2条消息 上报3个温度
+        float tem = (float) (Math.random() * 1000);
+        message.setProperties(Collections.singletonMap("tem",tem));
+        Buffer bufferTwo = createMessage(message,false,1,false);
+        socket.write(bufferTwo);
+        System.out.println("发送第一条消息");
+        Buffer bufferThree = Buffer.buffer();
+        for (int i = 0; i < msgLength-bufferTwo.length(); i++) {
+            Byte b = 0;
+            bufferThree.appendByte(b);
+        }
+
+        tem = (float) (Math.random() * 1000);
+        message.setProperties(Collections.singletonMap("tem", tem));
+        bufferThree.appendBuffer(createMessage(message,false,1,true));
+
+        tem = (float) (Math.random() * 1000);
+        message.setProperties(Collections.singletonMap("tem", tem));
+        bufferThree.appendBuffer(createMessage(message,false,1,true));
+        socket.write(bufferThree);
+
+        System.out.println("第2条消息成功发送，上报完成");
+        Thread.currentThread().sleep(3000);
+        // 关闭设备
+        socket.close();
+    }
+
+    /*
+    *  设备上线
+    *  lenthType ： 是否固定长度
+    *  isDelimit ： 是否分隔符
+    */
+    void online(Boolean lenthType,Boolean isDelimit) {
+        DeviceOnlineMessage message = new DeviceOnlineMessage();
+        message.addHeader(BinaryDeviceOnlineMessage.loginToken, "secureKey");
+        message.setDeviceId(deviceId);
+        Buffer buffers = createMessage(message,false,1,lenthType);
+        socket.write(buffers);
+        if (isDelimit){
+            socket.write(deLimit);
+        }
+    }
+
+    /*
+     * message      :   消息
+     * isReply      :   是否回复类型消息
+     * msgID        :   消息id
+     * lengthType   :   是否固定长度消息
+     *
      */
 
-    @Test
-    void testPropertyReport() {
-        TcpClient tcpClientTest = new TcpClient(object);
-        Vertx.vertx().deployVerticle(tcpClientTest);
-        System.out.println("输入任意字符开始连接服务器。。。。。。");
-        Scanner sc = new Scanner(System.in);
-        int count = 0;
-        while (sc.hasNext()) {
-            String str = sc.nextLine();
-            //进行设备连接验证
-            if (count == 0) {
-                socket = tcpClientTest.resNetSocket();
-                DeviceOnlineMessage message = new DeviceOnlineMessage();
-                message.addHeader(BinaryDeviceOnlineMessage.loginToken, "secureKey");
-                message.setDeviceId(object.getString("deviceId"));
-                ByteBuf buf = TcpDeviceMessageCodec.wrapByteByf(BinaryMessageType.write(message, Unpooled.buffer()));
-                Buffer buffers = Buffer.buffer(buf);
-                int length = buffers.length();
-                if (length <= object.getInteger("msgLength")) {
-                    for (int i = 0; i < object.getInteger("msgLength") - length; i++) {
-                        Byte b = 0;
-                        buffers.appendByte(b);
-                    }
-                } else {
-                    System.out.println("------------消息长度超过设置长度------------");
-                    socket.close();
-                }
-                socket.write(buffers);
-                count++;
-                System.out.println("---------------------设备连接成功---------------------");
-            }else {
-                socket = tcpClientTest.resNetSocket();
-
-                //构建3条消息   上报3个温度
-                Buffer bufferOne = createMessage();
-                Buffer bufferTwo = createMessage();
-                Buffer bufferThree = createMessage();
-                bufferOne.appendBuffer(bufferTwo).appendBuffer(bufferThree);
-                //向服务器发送消息
-                socket.write(bufferOne);
-                System.out.println("---------------------上报温度完成，本次成功上报三个温度---------------------");
-                System.out.println("---------------------请到设备日志查看本次上报记录---------------------");
-            }
-            System.out.println("---------------------输入任意字符上报3个温度---------------------");
-
-        }
-    }
-
-    Buffer createMessage() {
-        float temp = (float) (Math.random() * 1000);
-        // 构建消息
-        ReportPropertyMessage message = new ReportPropertyMessage();
-        message.setDeviceId(object.getString("deviceId"));
-        message.setMessageId("testReport");
-        //温度默认标识 temperature
-        message.setProperties(Collections.singletonMap("tem", temp));
-
-        ByteBuf buf = TcpDeviceMessageCodec.wrapByteByf(BinaryMessageType.write(message, Unpooled.buffer()));
-
-
-        Buffer buffers = Buffer.buffer(buf);
-        int length = buffers.length();
-        if (length <= object.getInteger("msgLength")) {
-            for (int i = 0; i < object.getInteger("msgLength") - length; i++) {
-                Byte b = 0;
-                buffers.appendByte(b);
-            }
+    Buffer createMessage(DeviceMessage message, Boolean isReply, int msgID,Boolean lengthType) {
+        Buffer buffer;
+        if (isReply) {
+            buffer = Buffer.buffer(TcpDeviceMessageCodec.wrapByteByf(BinaryMessageType.write(message, msgID, Unpooled.buffer())));
         } else {
-            System.out.println("------------消息长度超过设置长度------------");
-            socket.close();
+            buffer = Buffer.buffer(TcpDeviceMessageCodec.wrapByteByf(BinaryMessageType.write(message, Unpooled.buffer())));
         }
-        return buffers;
+        if (lengthType) {
+            int length = buffer.length();
+            if (length <= msgLength) {
+                for (int i = 0; i < 50 - length; i++) {
+                    Byte b = 0;
+                    buffer.appendByte(b);
+                }
+            } else {
+                System.out.println("-------------------消息长度超过固定长度-------------------");
+                return null;
+            }
+        }
+
+        return buffer;
     }
+
+
+    //连接服务器
+    class TcpClient extends AbstractVerticle {
+        public void start() {
+            // 连接服务器
+            vertx.createNetClient().connect(port, host, conn -> {
+                System.out.println(conn);
+                if (conn.succeeded()) {
+                    socket = conn.result();
+                    socket.handler(buffer -> {
+                        ByteBuf byteBuf = buffer.getByteBuf();
+                        Map<Integer, DeviceMessage> map = ServerReplyRead.readServer(byteBuf);
+                        DeviceMessage read = null;
+                        for (Integer key : map.keySet()) {
+                            msgID = key;
+                            read = map.get(key);
+                        }
+                        System.out.println("服务器消息:");
+                        System.out.println(read == null ? buffer.toString() : read.toString());
+                    });
+                } else {
+                    System.out.println("连接服务器异常");
+                }
+            });
+        }
+    }
+
+
 }
