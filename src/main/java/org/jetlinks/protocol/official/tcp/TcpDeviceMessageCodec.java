@@ -3,10 +3,7 @@ package org.jetlinks.protocol.official.tcp;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import lombok.NonNull;
-import org.jetlinks.core.message.AcknowledgeDeviceMessage;
-import org.jetlinks.core.message.DeviceMessage;
-import org.jetlinks.core.message.DeviceOnlineMessage;
-import org.jetlinks.core.message.Message;
+import org.jetlinks.core.message.*;
 import org.jetlinks.core.message.codec.*;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
@@ -105,7 +102,9 @@ public class TcpDeviceMessageCodec implements DeviceMessageCodec {
     @Override
     public Publisher<? extends EncodedMessage> encode(@NonNull MessageEncodeContext context) {
         DeviceMessage deviceMessage = ((DeviceMessage) context.getMessage());
-
+        if(deviceMessage instanceof DisconnectDeviceMessage){
+            return Mono.empty();
+        }
         return Mono.just(EncodedMessage.simple(
                 wrapByteByf(
                         BinaryMessageType.write(deviceMessage, Unpooled.buffer())

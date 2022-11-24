@@ -4,6 +4,7 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import lombok.SneakyThrows;
 import org.jetlinks.core.device.DeviceThingType;
 import org.jetlinks.core.message.AcknowledgeDeviceMessage;
@@ -20,16 +21,21 @@ import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 public enum BinaryMessageType {
+    //0x00
     keepalive(null, null),
 
+    //0x01
     online(DeviceOnlineMessage.class, BinaryDeviceOnlineMessage::new),
 
+    //0x02
     ack(AcknowledgeDeviceMessage.class, BinaryAcknowledgeDeviceMessage::new),
-
+    //0x03
     reportProperty(ReportPropertyMessage.class, BinaryReportPropertyMessage::new),
 
+    //0x04
     readProperty(ReadPropertyMessage.class, BinaryReadPropertyMessage::new),
 
+    //0x05
     readPropertyReply(ReadPropertyMessageReply.class, BinaryReadPropertyMessageReply::new),
 
     writeProperty(WritePropertyMessage.class, BinaryWritePropertyMessage::new),
@@ -112,14 +118,14 @@ public enum BinaryMessageType {
         BinaryMessageType type = lookup(message);
         // 第0个字节是消息类型
         data.writeByte(type.ordinal());
-        // 0-4字节 时间戳
+        // 第1-8字节 时间戳
         data.writeLong(message.getTimestamp());
 
-        // 5-6字节 消息序号
+        // 9-11字节 消息序号
         data.writeShort(msgId);
 
-        // 7... 字节 设备ID
-        DataType.writeTo(message.getDeviceId(), data);
+        // 12... 字节 设备ID
+        DataType.STRING.write(data, message.getDeviceId());
 
         // 创建消息对象
         BinaryMessage<DeviceMessage> tcp = type.forTcp.get();
@@ -148,7 +154,7 @@ public enum BinaryMessageType {
         // 5-6字节 消息序号
         int msgId = data.readUnsignedShort();
         // 7... 字节 设备ID
-        String deviceId = (String) DataType.readFrom(data);
+        String deviceId = (String) DataType.STRING.read(data);
         if (deviceId == null) {
             deviceId = deviceIdMaybe;
         }
@@ -177,7 +183,7 @@ public enum BinaryMessageType {
                 }
             }
 
-            if (messageId == null) {
+            if (messageId == null && msgId > 0) {
                 messageId = String.valueOf(msgId);
             }
             message.messageId(messageId);
