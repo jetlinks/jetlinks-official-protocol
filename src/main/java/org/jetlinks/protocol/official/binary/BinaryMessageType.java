@@ -167,7 +167,9 @@ public enum BinaryMessageType {
 
         DeviceMessage message = tcp.getMessage();
         message.thingId(DeviceThingType.device, deviceId);
-        message.timestamp(timestamp);
+        if (timestamp > 0) {
+            message.timestamp(timestamp);
+        }
 
         return handler.apply(message, msgId);
     }
