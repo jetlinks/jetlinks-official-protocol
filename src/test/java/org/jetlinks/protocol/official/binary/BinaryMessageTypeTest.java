@@ -63,7 +63,7 @@ public class BinaryMessageTypeTest {
         message.setFunctionId("123");
         message.setDeviceId("test");
         message.setMessageId("test123");
-        message.addInput("test",1);
+        message.addInput("test", 1);
         doTest(message);
 
         FunctionInvokeMessageReply reply = new FunctionInvokeMessageReply();
@@ -80,6 +80,9 @@ public class BinaryMessageTypeTest {
         BinaryMessageType.write(message, data);
 
         DeviceMessage read = BinaryMessageType.read(data);
+        if (null != read.getHeaders()) {
+            read.getHeaders().forEach(message::addHeader);
+        }
         System.out.println(read);
         Assert.assertEquals(read.toString(), message.toString());
     }

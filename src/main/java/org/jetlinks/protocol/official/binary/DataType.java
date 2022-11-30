@@ -148,7 +148,7 @@ public enum DataType {
     STRING {
         @Override
         public Object read(ByteBuf buf) {
-            int len = buf.readInt();
+            int len = buf.readUnsignedShort();
             byte[] bytes = new byte[len];
             buf.readBytes(bytes);
             return new String(bytes, StandardCharsets.UTF_8);
@@ -158,7 +158,7 @@ public enum DataType {
         public void write(ByteBuf buf, Object value) {
 
             String str = (String) value;
-            buf.writeInt(str.length());
+            buf.writeShort(str.length());
             buf.writeBytes(str.getBytes());
         }
     },
@@ -270,4 +270,17 @@ public enum DataType {
         }
     }
 
+    public static void main(String[] args) {
+        System.out.println("| Byte | Type |");
+        System.out.println("|  ----  | ----  |");
+        for (DataType value : DataType.values()) {
+            System.out.print("|");
+            System.out.print("0x0"+Integer.toString(value.ordinal(),16));
+            System.out.print("|");
+            System.out.print(value.name());
+            System.out.print("|");
+            System.out.println();
+        }
+        System.out.println();
+    }
 }

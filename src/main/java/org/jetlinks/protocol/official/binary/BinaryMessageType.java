@@ -1,22 +1,19 @@
 package org.jetlinks.protocol.official.binary;
 
 import com.google.common.cache.CacheBuilder;
-import com.google.common.collect.BiMap;
-import com.google.common.collect.HashBiMap;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
 import lombok.SneakyThrows;
 import org.jetlinks.core.device.DeviceThingType;
 import org.jetlinks.core.message.AcknowledgeDeviceMessage;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DeviceOnlineMessage;
+import org.jetlinks.core.message.HeaderKey;
 import org.jetlinks.core.message.function.FunctionInvokeMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
 
 import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
@@ -51,6 +48,9 @@ public enum BinaryMessageType {
     private final Supplier<BinaryMessage<DeviceMessage>> forTcp;
 
     private static final BinaryMessageType[] VALUES = values();
+
+    public static final HeaderKey<Integer> HEADER_MSG_SEQ = HeaderKey.of("_seq", 0, Integer.class);
+
 
     @SuppressWarnings("all")
     BinaryMessageType(Class<? extends DeviceMessage> forDevice,
@@ -101,7 +101,7 @@ public enum BinaryMessageType {
     }
 
     public static ByteBuf write(DeviceMessage message, ByteBuf data) {
-        int msgId = takeHolder(message.getDeviceId()).next(message.getMessageId());
+        int msgId = message.getHeaderOrElse(HEADER_MSG_SEQ, () -> takeHolder(message.getDeviceId()).next(message.getMessageId()));
         return write(message, msgId, data);
     }
 
@@ -170,6 +170,7 @@ public enum BinaryMessageType {
         if (timestamp > 0) {
             message.timestamp(timestamp);
         }
+        message.addHeader(HEADER_MSG_SEQ, msgId);
 
         return handler.apply(message, msgId);
     }
@@ -202,5 +203,18 @@ public enum BinaryMessageType {
         throw new UnsupportedOperationException("unsupported device message " + message.getMessageType());
     }
 
+    public static void main(String[] args) {
+        System.out.println("| Byte | Type |");
+        System.out.println("|  ----  | ----  |");
+        for (BinaryMessageType value : BinaryMessageType.values()) {
+            System.out.print("|");
+            System.out.print("0x0"+Integer.toString(value.ordinal(),16));
+            System.out.print("|");
+            System.out.print(value.name());
+            System.out.print("|");
+            System.out.println();
+        }
+        System.out.println();
+    }
 
 }

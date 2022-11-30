@@ -86,6 +86,10 @@ public class TcpDeviceMessageCodec implements DeviceMessageCodec {
         message.setMessageId(source.getMessageId());
         message.setCode(code.name());
         message.setSuccess(code == AckCode.ok);
+
+        source.getHeader(BinaryMessageType.HEADER_MSG_SEQ)
+              .ifPresent(seq -> message.addHeader(BinaryMessageType.HEADER_MSG_SEQ, seq));
+
         return ((FromDeviceMessageContext) context)
                 .getSession()
                 .send(EncodedMessage.simple(
@@ -102,7 +106,7 @@ public class TcpDeviceMessageCodec implements DeviceMessageCodec {
     @Override
     public Publisher<? extends EncodedMessage> encode(@NonNull MessageEncodeContext context) {
         DeviceMessage deviceMessage = ((DeviceMessage) context.getMessage());
-        if(deviceMessage instanceof DisconnectDeviceMessage){
+        if (deviceMessage instanceof DisconnectDeviceMessage) {
             return Mono.empty();
         }
         return Mono.just(EncodedMessage.simple(

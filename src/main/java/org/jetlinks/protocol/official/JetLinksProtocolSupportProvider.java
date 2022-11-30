@@ -10,6 +10,7 @@ import org.jetlinks.core.spi.ProtocolSupportProvider;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.protocol.official.http.JetLinksHttpDeviceMessageCodec;
 import org.jetlinks.protocol.official.tcp.TcpDeviceMessageCodec;
+import org.jetlinks.protocol.official.udp.UDPDeviceMessageCodec;
 import org.jetlinks.supports.official.JetLinksDeviceMetadataCodec;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -34,7 +35,6 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
 
     @Override
     public Mono<CompositeProtocolSupport> create(ServiceContext context) {
-
         return Mono.defer(() -> {
             CompositeProtocolSupport support = new CompositeProtocolSupport();
 
@@ -86,6 +86,13 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
             //TCP
             support.addConfigMetadata(DefaultTransport.TCP, TcpDeviceMessageCodec.tcpConfig);
             support.addMessageCodecSupport(new TcpDeviceMessageCodec());
+            support.setDocument(DefaultTransport.TCP,
+                                "document-tcp.md",
+                                JetLinksProtocolSupportProvider.class.getClassLoader());
+
+            //UDP
+            support.addConfigMetadata(DefaultTransport.UDP, UDPDeviceMessageCodec.udpConfig);
+            support.addMessageCodecSupport(new UDPDeviceMessageCodec());
 
             //MQTT
             support.addMessageCodecSupport(new JetLinksMqttDeviceMessageCodec());
