@@ -2,9 +2,11 @@
 
 JetLinks官方实现的设备接入协议,可用于参考实现自定义协议开发.
 
+注意: 本协议仅用于参考自定义协议开发,在实际使用中请根据不同的场景进行调整.如认证方式,加密等.
+
 ### MQTT
 
-[查看说明](http://doc.jetlinks.cn/basics-guide/jetlinks-protocol-support.html)
+[查看TOPIC说明](http://doc.jetlinks.cn/basics-guide/jetlinks-protocol-support.html)
 
 用户名密码可以使用[生成工具进行生成](http://doc.jetlinks.cn/basics-guide/jetlinks-protocol-support.html)
 
@@ -52,3 +54,8 @@ Content-Type: application/json
 UDP无需发送认证包,但是需要每个报文中都包含密钥信息.
 
 除了ACK以外,其他平台下发的指令也都会包含认证密钥信息,用于设备侧校验请求.
+
+
+### 测试
+
+可以使用[模拟器](http://github.com/jetlinks/device-simulator)进行模拟测试
