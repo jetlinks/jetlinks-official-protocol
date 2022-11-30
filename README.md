@@ -36,7 +36,7 @@ Content-Type: application/json
 后续为报文数据，
 具体报文格式见: [二进制格式说明](binary-protocol.md)
 
-创建连接后第一个数据包需要发送[认证包](binary-protocol.md#0x01 online 首次连接),
+创建连接后第一个数据包需要发送[认证包](binary-protocol.md#0x01-online-首次连接),
 密钥需要在`产品-设备接入`或者`设备详情`中进行配置
 
 ### UDP
