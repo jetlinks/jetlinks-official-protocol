@@ -8,6 +8,7 @@ import org.jetlinks.core.message.AcknowledgeDeviceMessage;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DeviceOnlineMessage;
 import org.jetlinks.core.message.HeaderKey;
+import org.jetlinks.core.message.event.EventMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
@@ -41,7 +42,9 @@ public enum BinaryMessageType {
 
     function(FunctionInvokeMessage.class, BinaryFunctionInvokeMessage::new),
 
-    functionReply(FunctionInvokeMessageReply.class, BinaryFunctionInvokeMessageReply::new);
+    functionReply(FunctionInvokeMessageReply.class, BinaryFunctionInvokeMessageReply::new),
+
+    event(EventMessage.class, BinaryEventMessage::new);
 
     private final Class<? extends DeviceMessage> forDevice;
 
