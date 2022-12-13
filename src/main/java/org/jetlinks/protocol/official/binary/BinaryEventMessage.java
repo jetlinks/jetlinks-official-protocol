@@ -4,12 +4,8 @@ import io.netty.buffer.ByteBuf;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 import org.jetlinks.core.message.event.EventMessage;
-import org.jetlinks.core.message.property.ReportPropertyMessage;
-
-import java.util.Map;
 
 /**
- * @author zhouhao
  * @since 1.0
  */
 @AllArgsConstructor

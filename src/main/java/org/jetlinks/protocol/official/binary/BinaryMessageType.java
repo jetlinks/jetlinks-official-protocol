@@ -44,7 +44,7 @@ public enum BinaryMessageType {
 
     functionReply(FunctionInvokeMessageReply.class, BinaryFunctionInvokeMessageReply::new),
 
-    event(EventMessage.class, BinaryEventMessage::new);
+    event(EventMessage .class, BinaryEventMessage::new);
 
     private final Class<? extends DeviceMessage> forDevice;
 
