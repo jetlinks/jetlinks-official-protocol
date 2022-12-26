@@ -80,6 +80,9 @@ public class TcpDeviceMessageCodec implements DeviceMessageCodec {
     }
 
     private <T> Mono<T> ack(DeviceMessage source, AckCode code, MessageDecodeContext context) {
+        if(source==null){
+            return Mono.empty();
+        }
         AcknowledgeDeviceMessage message = new AcknowledgeDeviceMessage();
         message.addHeader(BinaryAcknowledgeDeviceMessage.codeHeader, code.name());
         message.setDeviceId(source.getDeviceId());
