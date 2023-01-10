@@ -6,6 +6,7 @@ import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
 import org.jetlinks.core.metadata.types.StringType;
 import org.jetlinks.core.route.HttpRoute;
+import org.jetlinks.core.route.WebsocketRoute;
 import org.jetlinks.core.spi.ProtocolSupportProvider;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.protocol.official.http.JetLinksHttpDeviceMessageCodec;
@@ -17,6 +18,7 @@ import org.springframework.http.MediaType;
 import reactor.core.publisher.Mono;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -101,9 +103,25 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
             support.addConfigMetadata(DefaultTransport.HTTP, JetLinksHttpDeviceMessageCodec.httpConfig);
             support.addMessageCodecSupport(new JetLinksHttpDeviceMessageCodec());
 
+            //Websocket
+            JetLinksHttpDeviceMessageCodec codec = new JetLinksHttpDeviceMessageCodec(DefaultTransport.WebSocket);
+            support.addMessageCodecSupport(codec);
+            support.addAuthenticator(DefaultTransport.WebSocket, codec);
+
+            support.addRoutes(
+                    DefaultTransport.WebSocket,
+                    Collections.singleton(
+                            WebsocketRoute
+                                    .builder()
+                                    .path("/{productId:产品ID}/{productId:设备ID}/socket")
+                                    .description("通过Websocket接入平台")
+                                    .build()
+                    ));
+
             //CoAP
             support.addConfigMetadata(DefaultTransport.CoAP, JetLinksCoapDeviceMessageCodec.coapConfig);
             support.addMessageCodecSupport(new JetLinksCoapDeviceMessageCodec());
+
 
             return Mono.just(support);
         });
