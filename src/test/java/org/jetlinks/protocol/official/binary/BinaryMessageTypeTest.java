@@ -1,8 +1,10 @@
 package org.jetlinks.protocol.official.binary;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import org.jetlinks.core.message.DeviceMessage;
+import org.jetlinks.core.message.DeviceOnlineMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
@@ -14,6 +16,23 @@ import java.util.Collections;
 
 public class BinaryMessageTypeTest {
 
+
+    @Test
+    public void testOnline() {
+
+        DeviceOnlineMessage message = new DeviceOnlineMessage();
+        message.setDeviceId("1000");
+        message.addHeader(BinaryDeviceOnlineMessage.loginToken, "admin");
+
+        ByteBuf byteBuf = BinaryMessageType.write(message, Unpooled.buffer());
+
+        System.out.println(ByteBufUtil.prettyHexDump(byteBuf));
+
+        System.out.println(ByteBufUtil.prettyHexDump(Unpooled
+                                                             .buffer()
+                                                             .writeInt(byteBuf.readableBytes())
+                                                             .writeBytes(byteBuf)));
+    }
 
     @Test
     public void testReport() {
@@ -75,10 +94,10 @@ public class BinaryMessageTypeTest {
     }
 
     public void doTest(DeviceMessage message) {
-        ByteBuf data = Unpooled.buffer();
 
-        BinaryMessageType.write(message, data);
+        ByteBuf data = BinaryMessageType.write(message, Unpooled.buffer());
 
+        System.out.println(ByteBufUtil.prettyHexDump(data));
         DeviceMessage read = BinaryMessageType.read(data);
         if (null != read.getHeaders()) {
             read.getHeaders().forEach(message::addHeader);
