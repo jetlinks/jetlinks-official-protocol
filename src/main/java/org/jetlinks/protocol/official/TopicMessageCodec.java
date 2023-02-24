@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.SneakyThrows;
 import org.hswebframework.web.bean.FastBeanCopier;
 import org.jetlinks.core.message.*;
+import org.jetlinks.core.message.collector.*;
 import org.jetlinks.core.message.event.EventMessage;
 import org.jetlinks.core.message.firmware.*;
 import org.jetlinks.core.message.function.FunctionInvokeMessage;
@@ -278,6 +279,35 @@ public enum TopicMessageCodec {
     //状态检查
     stateCheck("/*/state-check", DeviceStateCheckMessage.class),
     stateCheckReply("/*/state-check/reply", DeviceStateCheckMessageReply.class),
+
+    //数采相关
+    collector("/*/collector/report", ReportCollectorDataMessage.class
+            , builder -> builder
+            .upstream(true)
+            .group("数采网关")
+            .description("上报数采点位数据")),
+    collectorRead("/*/collector/read",
+                  ReadCollectorDataMessage.class,
+                  builder -> builder
+                          .downstream(true)
+                          .group("数采网关")
+                          .description("平台读取点位数据")),
+    collectorReadReply("/*/collector/read/reply",
+                       ReadCollectorDataMessageReply.class,
+                       builder -> builder
+                               .upstream(true)
+                               .group("数采网关")
+                               .description("平台读取点位数据结果回复")),
+    collectorWrite("/*/collector/write", WriteCollectorDataMessage.class,
+                   builder -> builder
+                           .downstream(true)
+                           .group("数采网关")
+                           .description("平台修改点位数据")),
+    collectorWriteReply("/*/collector/write/reply", WriteCollectorDataMessageReply.class,
+                        builder -> builder
+                                .upstream(true)
+                                .group("数采网关")
+                                .description("平台修改点位数据结果回复")),
     ;
 
     TopicMessageCodec(String topic,
