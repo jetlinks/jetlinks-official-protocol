@@ -6,7 +6,7 @@
 
     <groupId>org.jetlinks</groupId>
     <artifactId>jetlinks-official-protocol</artifactId>
-    <version>3.0-SNAPSHOT</version>
+    <version>3.0.0</version>
 
     <name>JetLinks</name>
     <url>https://jetlinks.org</url>
@@ -204,7 +204,7 @@
         <dependency>
             <groupId>org.jetlinks</groupId>
             <artifactId>jetlinks-supports</artifactId>
-            <version>1.2.0-SNAPSHOT</version>
+            <version>1.2.0</version>
         </dependency>
 
         <dependency>
