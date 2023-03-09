@@ -157,9 +157,9 @@ public enum DataType {
         @Override
         public void write(ByteBuf buf, Object value) {
 
-            String str = (String) value;
-            buf.writeShort(str.length());
-            buf.writeBytes(str.getBytes());
+            byte[] bytes = ((String) value).getBytes();
+            buf.writeShort(bytes.length);
+            buf.writeBytes(bytes);
         }
     },
     //0x0C
