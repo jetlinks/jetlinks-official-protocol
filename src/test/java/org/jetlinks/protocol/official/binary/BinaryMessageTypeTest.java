@@ -97,12 +97,20 @@ public class BinaryMessageTypeTest {
 
         ByteBuf data = BinaryMessageType.write(message, Unpooled.buffer());
 
+        System.out.println("TCP报文: "+ByteBufUtil.hexDump(Unpooled
+                                                   .buffer()
+                                                   .writeInt(data.readableBytes())
+                                                   .writeBytes(data.duplicate())));
+
         System.out.println(ByteBufUtil.prettyHexDump(data));
+
         DeviceMessage read = BinaryMessageType.read(data);
         if (null != read.getHeaders()) {
             read.getHeaders().forEach(message::addHeader);
         }
         System.out.println(read);
+        //tcp时 发送的完整报文.
+
         Assert.assertEquals(read.toString(), message.toString());
     }
 
