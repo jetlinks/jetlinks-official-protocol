@@ -152,11 +152,11 @@ public enum BinaryMessageType {
         if (type.forTcp == null) {
             return null;
         }
-        // 1-4字节 时间戳
+        // 1-8字节 时间戳
         long timestamp = data.readLong();
-        // 5-6字节 消息序号
+        // 9-11字节 消息序号
         int msgId = data.readUnsignedShort();
-        // 7... 字节 设备ID
+        // 12... 字节 设备ID
         String deviceId = (String) DataType.STRING.read(data);
         if (deviceId == null) {
             deviceId = deviceIdMaybe;
