@@ -70,15 +70,26 @@
 ```
 
 ```java
-String he2x =
-    "00000027" +//消息长度
-    "01" + //请求上线
-    "00000186c51a890f" +//时间戳
-    "0001" +//消息序号
-    "0013" +//设备ID长度
-    "31363531383533343133303332383934343634" +//设备ID
-    "0005" +//secureKey长度
-    "61646d696e";//平台配置的secureKey
+	String hexForOnline =
+        "00000027" +//消息长度
+        "01" + //请求上线
+        "00000186c51a890f" +//时间戳
+        "0001" +//消息序号
+        "0013" +//设备ID长度
+        "31363531383533343133303332383934343634" +//设备ID
+        "0005" +//secureKey长度
+        "61646d696e";//平台配置的secureKey
+	//使用byteBuf构建上线消息
+		DeviceOnlineMessage message = new DeviceOnlineMessage();
+        message.setDeviceId("1651853413032894464");
+        message.addHeader(BinaryDeviceOnlineMessage.loginToken, "admin");
+        message.setMessageId("1");
+        message.setTimestamp(1678344096015L);
+        ByteBuf byteBuf = BinaryMessageType.write(message, Unpooled.buffer());
+        ByteBuf buf = Unpooled
+                .buffer()
+                .writeInt(byteBuf.readableBytes())
+                .writeBytes(byteBuf);
 ```
 
 
@@ -90,19 +101,29 @@ String he2x =
 ```
 
 ```java
-String hex =
-    "0000006C" +//消息长度
-    "03" +//上报消息
-    "00000186C567FA79" + //时间戳
-    "0002" +//消息序号
-    "0013" +//设备ID长度
-    "31363531383533343133303332383934343634" +//设备ID
-    "0001" + //OBJECT对象数量
-    "0004" +//key的长度
-    "74656d70" + //值
-    "0B" + //value的类型
-    "0004" +//Value的长度
-    "33362e35" + //值
-    "0005" + //secureKey长度
-    "61646d696e";//平台配置的secureKey
+    String hexForReport =
+        "0000006C" +//消息长度
+        "03" +//上报消息
+        "00000186C567FA79" + //时间戳
+        "0002" +//消息序号
+        "0013" +//设备ID长度
+        "31363531383533343133303332383934343634" +//设备ID
+        "0001" + //OBJECT对象数量
+        "0004" +//key的长度
+        "74656d70" + //值
+        "0B" + //value的类型
+        "0004" +//Value的长度
+        "33362e35" + //值
+        "0005" + //secureKey长度
+        "61646d696e";//平台配置的secureKey
+//使用byteBuf构建上线消息
+   		ReportPropertyMessage message = new ReportPropertyMessage();
+        message.setDeviceId("1651853413032894464");
+        message.addHeader(BinaryDeviceOnlineMessage.loginToken, "admin");
+        message.setMessageId("2");
+        message.setProperties(Collections.singletonMap("temp", 32.88));
+        ByteBuf data = BinaryMessageType.write(message, Unpooled.buffer());
+        ByteBuf buf = Unpooled.buffer()
+                .writeInt(data.readableBytes())
+                .writeBytes(data);
 ```
