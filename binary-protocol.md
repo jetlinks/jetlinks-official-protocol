@@ -79,7 +79,22 @@
         "31363531383533343133303332383934343634" +//设备ID
         "0005" +//secureKey长度
         "61646d696e";//平台配置的secureKey
-	//使用byteBuf构建上线消息
+	//构建方式一：使用byteBuf构建上线消息
+        String deviceId = "1651853413032894464";
+        String secureKey = "admin";
+        ByteBuf data = Unpooled
+                .buffer()
+                .writeByte(0x01)
+                .writeLong(System.currentTimeMillis())
+                .writeShort(1)
+                .writeShort(deviceId.getBytes().length)
+                .writeBytes(deviceId.getBytes())
+                .writeShort(secureKey.getBytes().length)
+                .writeBytes(secureKey.getBytes());
+        ByteBuf onlineBuf = Unpooled.buffer()
+                .writeInt(data.readableBytes())
+                .writeBytes(data);
+    //构建方式二：使用jetlinks-core构建消息
 		DeviceOnlineMessage message = new DeviceOnlineMessage();
         message.setDeviceId("1651853413032894464");
         message.addHeader(BinaryDeviceOnlineMessage.loginToken, "admin");
@@ -116,7 +131,30 @@
         "33362e35" + //值
         "0005" + //secureKey长度
         "61646d696e";//平台配置的secureKey
-//使用byteBuf构建上线消息
+//构建方式一
+        String deviceId = "1651853413032894464";
+        String secureKey = "admin";
+        String key = "temp";
+        String value = "36.5";
+        ByteBuf data = Unpooled
+                .buffer()
+                .writeByte(0x03)
+                .writeLong(System.currentTimeMillis())
+                .writeShort(2)
+                .writeShort(deviceId.getBytes().length)
+                .writeBytes(deviceId.getBytes())
+                .writeShort(1)
+                .writeShort(key.getBytes().length)
+                .writeBytes(key.getBytes())
+                .writeByte(0x0B)
+                .writeShort(value.getBytes().length)
+                .writeBytes(value.getBytes())
+                .writeShort(secureKey.getBytes().length)
+                .writeBytes(secureKey.getBytes());
+        ByteBuf reportBuf = Unpooled.buffer()
+                .writeInt(data.readableBytes())
+                .writeBytes(data);
+//构建方式二
    		ReportPropertyMessage message = new ReportPropertyMessage();
         message.setDeviceId("1651853413032894464");
         message.addHeader(BinaryDeviceOnlineMessage.loginToken, "admin");
