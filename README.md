@@ -6,7 +6,7 @@ JetLinks官方实现的设备接入协议,可用于参考实现自定义协议�
 
 ### MQTT
 
-[查看TOPIC说明]([http://doc.jetlinks.cn/dev-guide/jetlinks-protocol-support.html](https://hanta.yuque.com/px7kg1/yfac2l/sr0metyagzmhbtm7))
+[查看TOPIC说明](https://hanta.yuque.com/px7kg1/yfac2l/sr0metyagzmhbtm7)
 
 用户名密码可以使用[生成工具进行生成](http://doc.jetlinks.cn/basics-guide/mqtt-auth-generator.html)
 
