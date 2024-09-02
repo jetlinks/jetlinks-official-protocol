@@ -3,6 +3,7 @@ package org.jetlinks.protocol.official;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.californium.core.coap.CoAP;
+import org.eclipse.californium.core.coap.MediaTypeRegistry;
 import org.eclipse.californium.core.coap.OptionNumberRegistry;
 import org.jetlinks.core.Value;
 import org.jetlinks.core.message.DeviceMessage;
@@ -41,9 +42,12 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
         String path = getPath(message);
         String deviceId = getDeviceId(message);
         boolean cbor = message
-                .getStringOption(OptionNumberRegistry.CONTENT_FORMAT)
-                .map(MediaType::valueOf)
-                .map(MediaType.APPLICATION_CBOR::includes)
+                .getOption(OptionNumberRegistry.CONTENT_FORMAT)
+                .map(option -> {
+                    String contentType = MediaTypeRegistry.toString(option.getIntegerValue());
+                    MediaType mediaType = MediaType.valueOf(contentType);
+                    return MediaType.APPLICATION_CBOR.includes(mediaType);
+                })
                 .orElse(false);
         ObjectMapper objectMapper = cbor ? ObjectMappers.CBOR_MAPPER : ObjectMappers.JSON_MAPPER;
         return context
