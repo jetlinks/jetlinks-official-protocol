@@ -133,7 +133,7 @@ public class JetLinksHttpDeviceMessageCodec implements DeviceMessageCodec, Authe
         String basicToken = token[1];
 
         String[] paths = TopicMessageCodec.removeProductPath(message.getPath());
-        if (paths.length < 1) {
+        if (paths.length < 2) {
             return message
                     .response(badRequest())
                     .thenMany(Mono.empty());
