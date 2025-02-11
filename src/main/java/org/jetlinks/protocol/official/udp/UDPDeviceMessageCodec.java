@@ -3,38 +3,41 @@ package org.jetlinks.protocol.official.udp;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import lombok.NonNull;
+import org.jetlinks.core.config.ConfigKey;
+import org.jetlinks.core.defaults.BlockingDeviceOperator;
 import org.jetlinks.core.device.DeviceOperator;
 import org.jetlinks.core.message.*;
 import org.jetlinks.core.message.codec.*;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
+import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.protocol.official.binary.*;
+import org.jetlinks.supports.protocol.blocking.BlockingDeviceMessageCodec;
+import org.jetlinks.supports.protocol.blocking.BlockingMessageDecodeContext;
+import org.jetlinks.supports.protocol.blocking.BlockingMessageEncodeContext;
 import org.reactivestreams.Publisher;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Mono;
 
 import java.util.Objects;
 
-public class UDPDeviceMessageCodec implements DeviceMessageCodec {
+public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
 
-    public static final String CONFIG_KEY_SECURE_KEY = "secureKey";
+    public static final ConfigKey<String> CONFIG_KEY_SECURE_KEY = ConfigKey.of("secureKey");
 
     public static final DefaultConfigMetadata udpConfig = new DefaultConfigMetadata(
-            "UDP认证配置"
-            , "")
-            .add(CONFIG_KEY_SECURE_KEY, "secureKey", "密钥", new PasswordType());
+        "UDP认证配置"
+        , "")
+        .add(CONFIG_KEY_SECURE_KEY.getKey(), "secureKey", "密钥", new PasswordType());
 
 
-    @Override
-    public Transport getSupportTransport() {
-        return DefaultTransport.UDP;
+    public UDPDeviceMessageCodec(ServiceContext context) {
+        super(context, DefaultTransport.UDP);
     }
 
-    @NonNull
     @Override
-    public Publisher<? extends Message> decode(@NonNull MessageDecodeContext context) {
-
-        ByteBuf payload = context.getMessage().getPayload();
+    protected void upstream(BlockingMessageDecodeContext context) {
+        ByteBuf payload = context.getData().getPayload();
 
         //todo 认证类型, 0 token,1 sign
         byte authType = payload.readByte();
@@ -45,18 +48,27 @@ public class UDPDeviceMessageCodec implements DeviceMessageCodec {
         //接下来是消息
         DeviceMessage message = BinaryMessageType.read(payload);
 
-        return context
-                .getDevice(message.getDeviceId())
-                .flatMap(device -> device
-                        .getConfig(CONFIG_KEY_SECURE_KEY)
-                        .flatMap(config -> {
-                            if (Objects.equals(config.asString(), token)) {
-                                return ack(message, AckCode.ok, context)
-                                        .thenReturn(message);
-                            }
-                            return Mono.empty();
-                        }))
-                .switchIfEmpty(Mono.defer(() -> ack(message, AckCode.noAuth, context)));
+        BlockingDeviceOperator device = context.getDevice(message.getDeviceId());
+        if (device == null) {
+            ack(message, AckCode.noAuth, context);
+            return;
+        }
+
+        String key = device.getConfigNow(CONFIG_KEY_SECURE_KEY);
+        if (Objects.equals(key, token)) {
+            context.sendToPlatformLater(message);
+            ack(message, AckCode.ok, context);
+
+        }
+    }
+
+    @Override
+    protected void downstream(BlockingMessageEncodeContext context) {
+        BlockingDeviceOperator device = context.getDevice();
+
+        String key = device.getConfigNow(CONFIG_KEY_SECURE_KEY);
+
+        context.sendToDeviceLater(doEncode(context.getMessage(), key));
     }
 
     public static ByteBuf wrapByteByf(ByteBuf payload) {
@@ -64,7 +76,8 @@ public class UDPDeviceMessageCodec implements DeviceMessageCodec {
         return payload;
     }
 
-    private <T> Mono<T> ack(DeviceMessage source, AckCode code, MessageDecodeContext context) {
+    private void ack(DeviceMessage source, AckCode code, BlockingMessageDecodeContext context) {
+
         AcknowledgeDeviceMessage message = new AcknowledgeDeviceMessage();
         message.addHeader(BinaryAcknowledgeDeviceMessage.codeHeader, code.name());
         message.setDeviceId(source.getDeviceId());
@@ -75,29 +88,14 @@ public class UDPDeviceMessageCodec implements DeviceMessageCodec {
         source.getHeader(BinaryMessageType.HEADER_MSG_SEQ)
               .ifPresent(seq -> message.addHeader(BinaryMessageType.HEADER_MSG_SEQ, seq));
 
-        return ((FromDeviceMessageContext) context)
-                .getSession()
-                .send(doEncode(message, ""))
-                .then(Mono.fromRunnable(() -> {
-                    if (source instanceof DeviceOnlineMessage && code != AckCode.ok) {
-                        ((FromDeviceMessageContext) context).getSession().close();
-                    }
-                }));
-    }
+        context.sendToDeviceLater(doEncode(message, ""));
 
-    @NonNull
-    @Override
-    public Publisher<? extends EncodedMessage> encode(@NonNull MessageEncodeContext context) {
-        DeviceMessage deviceMessage = ((DeviceMessage) context.getMessage());
-        if (deviceMessage instanceof DisconnectDeviceMessage) {
-            return Mono.empty();
+        if (source instanceof DeviceOnlineMessage && code != AckCode.ok) {
+
+            context.disconnectLater();
         }
 
-        return context
-                .getDevice(deviceMessage.getDeviceId())
-                .flatMap(device -> device
-                        .getConfig(CONFIG_KEY_SECURE_KEY)
-                        .map(config -> doEncode(deviceMessage, config.asString())));
+
     }
 
     private EncodedMessage doEncode(DeviceMessage message, String token) {

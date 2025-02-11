@@ -1,87 +1,118 @@
 package org.jetlinks.protocol.official.tcp;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import lombok.NonNull;
+import org.jetlinks.core.config.ConfigKey;
+import org.jetlinks.core.defaults.BlockingDeviceOperator;
 import org.jetlinks.core.message.*;
 import org.jetlinks.core.message.codec.*;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
+import org.jetlinks.core.monitor.logger.Logger;
+import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.protocol.official.binary.AckCode;
 import org.jetlinks.protocol.official.binary.BinaryAcknowledgeDeviceMessage;
 import org.jetlinks.protocol.official.binary.BinaryDeviceOnlineMessage;
 import org.jetlinks.protocol.official.binary.BinaryMessageType;
+import org.jetlinks.supports.protocol.blocking.BlockingDeviceMessageCodec;
+import org.jetlinks.supports.protocol.blocking.BlockingMessageDecodeContext;
+import org.jetlinks.supports.protocol.blocking.BlockingMessageEncodeContext;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Mono;
 
 import java.util.Objects;
 
-public class TcpDeviceMessageCodec implements DeviceMessageCodec {
+public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
 
-    public static final String CONFIG_KEY_SECURE_KEY = "secureKey";
+    public static final ConfigKey<String> CONFIG_KEY_SECURE_KEY = ConfigKey.of("secureKey");
 
     public static final DefaultConfigMetadata tcpConfig = new DefaultConfigMetadata(
-            "TCP认证配置"
-            , "")
-            .add(CONFIG_KEY_SECURE_KEY, "secureKey", "密钥", new PasswordType());
+        "TCP认证配置"
+        , "")
+        .add(CONFIG_KEY_SECURE_KEY.getKey(), "secureKey", "密钥", new PasswordType());
 
-
-    @Override
-    public Transport getSupportTransport() {
-        return DefaultTransport.TCP;
+    public TcpDeviceMessageCodec(ServiceContext context) {
+        super(context, DefaultTransport.TCP);
     }
 
-    @NonNull
     @Override
-    public Publisher<? extends Message> decode(@NonNull MessageDecodeContext context) {
-
-        ByteBuf payload = context.getMessage().getPayload();
+    protected void upstream(BlockingMessageDecodeContext context) {
+        ByteBuf payload = context.getData().getPayload();
         //read index
         payload.readInt();
 
-        //处理tcp连接后的首次消息
-        if (context.getDevice() == null) {
-            return handleLogin(payload, context);
+        //使用内置的logger,便于平台收集和管理日志.
+        Logger logger = logger();
+
+        if (logger.isDebugEnabled()) {
+            logger.debug("收到设备TCP报文: {}", ByteBufUtil.hexDump(payload));
         }
-        return Mono.justOrEmpty(BinaryMessageType.read(payload, context.getDevice().getDeviceId()));
+
+        BlockingDeviceOperator device = context.getDevice();
+        if (device == null) {
+            handleLogin(payload, context);
+        } else {
+            //直接解码并发送给平台
+            context.sendToPlatformLater(BinaryMessageType.read(payload, context.getDevice().getDeviceId()));
+        }
+
     }
 
-    private Mono<DeviceMessage> handleLogin(ByteBuf payload, MessageDecodeContext context) {
+    @Override
+    protected void downstream(BlockingMessageEncodeContext context) {
+        context.sendToDeviceLater(
+            EncodedMessage.simple(
+                wrapByteByf(
+                    BinaryMessageType.write(context.getMessage(), Unpooled.buffer())
+                )
+            )
+        );
+    }
+
+    private void handleLogin(ByteBuf payload, BlockingMessageDecodeContext context) {
         DeviceMessage message = BinaryMessageType.read(payload);
         if (message instanceof DeviceOnlineMessage) {
+
             String token = message
-                    .getHeader(BinaryDeviceOnlineMessage.loginToken)
-                    .orElse(null);
+                .getHeader(BinaryDeviceOnlineMessage.loginToken)
+                .orElse(null);
 
             String deviceId = message.getDeviceId();
-            return context
-                    .getDevice(deviceId)
-                    .flatMap(device -> device
-                            .getConfig(CONFIG_KEY_SECURE_KEY)
-                            .flatMap(config -> {
-                                if (Objects.equals(config.asString(), token)) {
-                                    return ack(message, AckCode.ok, context)
-                                            .thenReturn(message);
-                                }
-                                return Mono.empty();
-                            }))
-                    .switchIfEmpty(Mono.defer(() -> ack(message, AckCode.noAuth, context)));
 
+            BlockingDeviceOperator device = context.getDevice(deviceId);
+
+            if (device == null) {
+                logger().warn("设备不存在或未激活:{}", deviceId);
+                return;
+            }
+
+            String secureKey = device.getConfigNow(CONFIG_KEY_SECURE_KEY);
+            if (Objects.equals(secureKey, token)) {
+                //发送上线消息给平台
+                context.sendToPlatformLater(message);
+                //应答设备
+                ack(message, AckCode.ok, context);
+                return;
+            }
+            //应答未授权
+            ack(message, AckCode.noAuth, context);
         } else {
-            return ack(message, AckCode.noAuth, context);
+            //应答未授权
+            ack(message, AckCode.noAuth, context);
         }
     }
 
     public static ByteBuf wrapByteByf(ByteBuf payload) {
-
         return Unpooled.wrappedBuffer(
-                Unpooled.buffer().writeInt(payload.writerIndex()),
-                payload);
+            Unpooled.buffer().writeInt(payload.writerIndex()),
+            payload);
     }
 
-    private <T> Mono<T> ack(DeviceMessage source, AckCode code, MessageDecodeContext context) {
-        if(source==null){
-            return Mono.empty();
+    private void ack(DeviceMessage source, AckCode code, BlockingMessageDecodeContext context) {
+        if (source == null) {
+            return;
         }
         AcknowledgeDeviceMessage message = new AcknowledgeDeviceMessage();
         message.addHeader(BinaryAcknowledgeDeviceMessage.codeHeader, code.name());
@@ -93,30 +124,14 @@ public class TcpDeviceMessageCodec implements DeviceMessageCodec {
         source.getHeader(BinaryMessageType.HEADER_MSG_SEQ)
               .ifPresent(seq -> message.addHeader(BinaryMessageType.HEADER_MSG_SEQ, seq));
 
-        return ((FromDeviceMessageContext) context)
-                .getSession()
-                .send(EncodedMessage.simple(
-                        wrapByteByf(BinaryMessageType.write(message, Unpooled.buffer()))
-                ))
-                .then(Mono.fromRunnable(() -> {
-                    if (source instanceof DeviceOnlineMessage && code != AckCode.ok) {
-                        ((FromDeviceMessageContext) context).getSession().close();
-                    }
-                }));
-    }
-
-    @NonNull
-    @Override
-    public Publisher<? extends EncodedMessage> encode(@NonNull MessageEncodeContext context) {
-        DeviceMessage deviceMessage = ((DeviceMessage) context.getMessage());
-        if (deviceMessage instanceof DisconnectDeviceMessage) {
-            return Mono.empty();
-        }
-        return Mono.just(EncodedMessage.simple(
-                wrapByteByf(
-                        BinaryMessageType.write(deviceMessage, Unpooled.buffer())
-                )
+        context.sendToDeviceLater(EncodedMessage.simple(
+            wrapByteByf(BinaryMessageType.write(message, Unpooled.buffer()))
         ));
+
+        if (source instanceof DeviceOnlineMessage && code != AckCode.ok) {
+            context.disconnectLater();
+        }
+
     }
 
 

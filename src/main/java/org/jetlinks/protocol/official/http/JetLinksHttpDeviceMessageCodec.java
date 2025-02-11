@@ -2,10 +2,13 @@ package org.jetlinks.protocol.official.http;
 
 import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.core.JsonParseException;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
+import org.jetlinks.core.config.ConfigKey;
 import org.jetlinks.core.defaults.Authenticator;
+import org.jetlinks.core.defaults.BlockingDeviceOperator;
 import org.jetlinks.core.device.*;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DisconnectDeviceMessage;
@@ -19,10 +22,17 @@ import org.jetlinks.core.message.codec.http.websocket.WebSocketMessage;
 import org.jetlinks.core.message.codec.http.websocket.WebSocketSessionMessage;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
+import org.jetlinks.core.spi.EmptyServiceContext;
+import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.core.trace.DeviceTracer;
 import org.jetlinks.core.trace.FluxTracer;
+import org.jetlinks.core.trace.MonoTracer;
+import org.jetlinks.core.trace.TraceHolder;
 import org.jetlinks.protocol.official.ObjectMappers;
 import org.jetlinks.protocol.official.TopicMessageCodec;
+import org.jetlinks.supports.protocol.blocking.BlockingDeviceMessageCodec;
+import org.jetlinks.supports.protocol.blocking.BlockingMessageDecodeContext;
+import org.jetlinks.supports.protocol.blocking.BlockingMessageEncodeContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
@@ -38,39 +48,48 @@ import java.util.Objects;
  * @author zhouhao
  * @since 3.0.0
  */
-@Slf4j
-public class JetLinksHttpDeviceMessageCodec implements DeviceMessageCodec, Authenticator {
+public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec implements Authenticator {
+
+    static final ConfigKey<String> BEARER_TOKEN = ConfigKey.of("bearer_token");
+
     public static final DefaultConfigMetadata httpConfig = new DefaultConfigMetadata(
         "HTTP认证配置"
         , "使用HTTP Bearer Token进行认证")
-        .add("bearer_token", "Token", "Token", new PasswordType());
+        .add(BEARER_TOKEN.getKey(), "Token", "Token", new PasswordType());
 
-    private final Transport transport;
-
-    public JetLinksHttpDeviceMessageCodec(Transport transport) {
-        this.transport = transport;
+    public JetLinksHttpDeviceMessageCodec(ServiceContext context, Transport transport) {
+        super(context, transport);
     }
 
     public JetLinksHttpDeviceMessageCodec() {
-        this(DefaultTransport.HTTP);
+        this(EmptyServiceContext.INSTANCE, DefaultTransport.HTTP);
     }
 
     @Override
-    public Transport getSupportTransport() {
-        return transport;
+    protected void upstream(BlockingMessageDecodeContext context) {
+        if (context.getData() instanceof HttpExchangeMessage) {
+            decodeHttp(context);
+        }
+
+        if (context.getData() instanceof WebSocketSessionMessage) {
+            decodeWebsocket(context);
+        }
     }
 
-    @Nonnull
-    public Mono<EncodedMessage> encode(@Nonnull MessageEncodeContext context) {
-        //断开链接,不返回任何结果,由系统决定处理方式.
+    @Override
+    protected void downstream(BlockingMessageEncodeContext context) {
         if (context.getMessage() instanceof DisconnectDeviceMessage) {
-            return Mono.empty();
+            return;
         }
+
         JSONObject json = context.getMessage().toJson();
-        //通过websocket下发
-        return Mono.just(DefaultWebSocketMessage.of(
-            WebSocketMessage.Type.TEXT,
-            Unpooled.wrappedBuffer(json.toJSONString().getBytes())));
+        //转为json 发送给设备
+        context.sendToDeviceLater(
+            DefaultWebSocketMessage.of(
+                WebSocketMessage.Type.TEXT,
+                Unpooled.wrappedBuffer(json.toJSONString().getBytes()))
+        );
+
     }
 
     private static SimpleHttpResponseMessage unauthorized(String msg) {
@@ -92,97 +111,112 @@ public class JetLinksHttpDeviceMessageCodec implements DeviceMessageCodec, Authe
             .build();
     }
 
-    @Nonnull
-    @Override
-    public Flux<DeviceMessage> decode(@Nonnull MessageDecodeContext context) {
-        if (context.getMessage() instanceof HttpExchangeMessage) {
-            return decodeHttp(context);
-        }
+    private void decodeWebsocket(BlockingMessageDecodeContext context) {
+        WebSocketSessionMessage msg = ((WebSocketSessionMessage) context.getData());
 
-        if (context.getMessage() instanceof WebSocketSessionMessage) {
-            return decodeWebsocket(context);
-        }
+        DeviceMessage message = (DeviceMessage) MessageType
+            .convertMessage(msg.payloadAsJson())
+            .orElse(null);
 
-        return Flux.empty();
-    }
-
-    private Flux<DeviceMessage> decodeWebsocket(MessageDecodeContext context) {
-        WebSocketSessionMessage msg = ((WebSocketSessionMessage) context.getMessage());
-
-        return Mono
-            .justOrEmpty(MessageType.convertMessage(msg.payloadAsJson()))
-            .cast(DeviceMessage.class)
-            .flux();
+        context.sendToPlatformLater(message);
 
     }
 
-    private Flux<DeviceMessage> decodeHttp(MessageDecodeContext context) {
-        HttpExchangeMessage message = (HttpExchangeMessage) context.getMessage();
+    private void decodeHttp(BlockingMessageDecodeContext context) {
+        HttpExchangeMessage exchange = (HttpExchangeMessage) context.getData();
 
         //校验请求头中的Authorization header,格式:
         // Authorization: Bearer <token>
-        Header header = message.getHeader(HttpHeaders.AUTHORIZATION).orElse(null);
+        Header header = exchange.getHeader(HttpHeaders.AUTHORIZATION).orElse(null);
         if (header == null || header.getValue() == null || header.getValue().length == 0) {
-            return message
-                .response(unauthorized("Authorization header is required"))
-                .thenMany(Mono.empty());
+
+            context.async(
+                exchange
+                    .response(unauthorized("Authorization header is required"))
+            );
+
+            return;
         }
 
         String[] token = header.getValue()[0].split(" ");
         if (token.length == 1) {
-            return message
-                .response(unauthorized("Illegal token format"))
-                .thenMany(Mono.empty());
+            context.async(
+                exchange
+                    .response(unauthorized("Illegal token format"))
+            );
+            return;
         }
         String basicToken = token[1];
 
-        String[] paths = TopicMessageCodec.removeProductPath(message.getPath());
+        String[] paths = TopicMessageCodec.removeProductPath(exchange.getPath());
         if (paths.length < 1) {
-            return message
-                .response(badRequest())
-                .thenMany(Mono.empty());
+            context.async(
+                exchange
+                    .response(badRequest())
+            );
+            return;
         }
         String deviceId = paths[1];
-        return context
-            .getDevice(deviceId)
-            .flatMap(device -> device.getConfig("bearer_token"))
-            //校验token
-            .filter(value -> Objects.equals(value.asString(), basicToken))
-            //设备或者配置不对
-            .switchIfEmpty(Mono.defer(() -> message
-                .response(unauthorized("Device no register or token not match"))
-                .then(Mono.empty())))
-            //解码
-            .flatMapMany(ignore -> doDecode(message, paths))
-            .switchOnFirst((s, flux) -> {
-                Mono<Void> handler;
-                //有结果则认为成功
-                if (s.hasValue()) {
-                    handler = message.ok("{\"success\":true}");
-                } else {
-                    return message
-                        .response(badRequest())
-                        .then(Mono.empty());
-                }
-                return handler.thenMany(flux);
-            })
-            .onErrorResume(err -> message
-                .error(500, getErrorMessage(err))
-                .then(Mono.error(err)))
-            //跟踪信息
-            .as(FluxTracer
-                    .create(DeviceTracer.SpanName.decode(deviceId),
-                            builder -> builder.setAttribute(DeviceTracer.SpanKey.message, message.print())));
+        BlockingDeviceOperator device = context.getDevice(deviceId);
+
+        if (device == null) {
+            context.async(
+                exchange
+                    .response(unauthorized("Device no register"))
+            );
+            return;
+        }
+
+        String deviceToken = device.getConfigNow(BEARER_TOKEN);
+
+        if (Objects.equals(deviceToken, basicToken)) {
+            logger(deviceId)
+                .warn("device token not match,device:{},token:{}", deviceId, basicToken);
+            context.async(
+                exchange
+                    .response(unauthorized("Token not match"))
+            );
+            return;
+        }
+
+        try {
+
+            //解码并发送给平台
+            context.sendToPlatformLater(
+                TraceHolder
+                    .traceBlocking(
+                        DeviceTracer.SpanName.decode0(deviceId),
+                        (span) -> {
+                            DeviceMessage message = doDecode(exchange, paths);
+                            span.setAttributeLazy(DeviceTracer.SpanKey.message, exchange::print);
+                            return message;
+                        }));
+
+
+            //响应http
+            context.async(
+                exchange.ok("{\"success\":true}")
+            );
+
+        } catch (Throwable e) {
+            context.async(
+                exchange
+                    .error(500, getErrorMessage(e)
+                    ));
+        }
 
     }
 
-    private Flux<DeviceMessage> doDecode(HttpExchangeMessage message, String[] paths) {
-        return message
-            .payload()
-            .flatMapMany(buf -> {
-                byte[] body = ByteBufUtil.getBytes(buf);
-                return TopicMessageCodec.decode(ObjectMappers.JSON_MAPPER, paths, body);
-            });
+    private DeviceMessage doDecode(HttpExchangeMessage message, String[] paths) {
+        ByteBuf body = await(message.payload());
+
+        if (body == null) {
+            body = Unpooled.EMPTY_BUFFER;
+        }
+
+        byte[] bytes = ByteBufUtil.getBytes(body);
+
+        return TopicMessageCodec.decode(ObjectMappers.JSON_MAPPER, paths, bytes);
     }
 
     public String getErrorMessage(Throwable err) {

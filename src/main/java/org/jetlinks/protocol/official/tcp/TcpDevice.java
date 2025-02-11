@@ -20,7 +20,6 @@ import reactor.core.publisher.Mono;
 
 import java.util.Collections;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class TcpDevice {

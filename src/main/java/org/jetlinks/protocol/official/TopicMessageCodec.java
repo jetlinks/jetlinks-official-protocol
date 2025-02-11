@@ -29,69 +29,68 @@ public enum TopicMessageCodec {
     reportProperty("/*/properties/report",
                    ReportPropertyMessage.class,
                    route -> route
-                           .upstream(true)
-                           .downstream(false)
-                           .group("属性上报")
-                           .description("上报物模型属性数据")
-                           .example("{\"properties\":{\"属性ID\":\"属性值\"}}")),
+                       .upstream(true)
+                       .downstream(false)
+                       .group("属性上报")
+                       .description("上报物模型属性数据")
+                       .example("{\"properties\":{\"属性ID\":\"属性值\"}}")),
     //读取属性
     readProperty("/*/properties/read",
                  ReadPropertyMessage.class,
                  route -> route
-                         .upstream(false)
-                         .downstream(true)
-                         .group("读取属性")
-                         .description("平台下发读取物模型属性数据指令")
-                         .example("{\"messageId\":\"消息ID,回复时需要一致.\",\"properties\":[\"属性ID\"]}")),
+                     .upstream(false)
+                     .downstream(true)
+                     .group("读取属性")
+                     .description("平台下发读取物模型属性数据指令")
+                     .example("{\"messageId\":\"消息ID,回复时需要一致.\",\"properties\":[\"属性ID\"]}")),
     //读取属性回复
     readPropertyReply("/*/properties/read/reply",
                       ReadPropertyMessageReply.class,
                       route -> route
-                              .upstream(true)
-                              .downstream(false)
-                              .group("读取属性")
-                              .description("对平台下发的读取属性指令进行响应")
-                              .example("{\"messageId\":\"消息ID,与读取指令中的ID一致.\",\"properties\":{\"属性ID\":\"属性值\"}}")),
+                          .upstream(true)
+                          .downstream(false)
+                          .group("读取属性")
+                          .description("对平台下发的读取属性指令进行响应")
+                          .example("{\"messageId\":\"消息ID,与读取指令中的ID一致.\",\"properties\":{\"属性ID\":\"属性值\"}}")),
     //修改属性
     writeProperty("/*/properties/write",
                   WritePropertyMessage.class,
                   route -> route
-                          .upstream(false)
-                          .downstream(true)
-                          .group("修改属性")
-                          .description("平台下发修改物模型属性数据指令")
-                          .example("{\"messageId\":\"消息ID,回复时需要一致.\",\"properties\":{\"属性ID\":\"属性值\"}}")),
+                      .upstream(false)
+                      .downstream(true)
+                      .group("修改属性")
+                      .description("平台下发修改物模型属性数据指令")
+                      .example("{\"messageId\":\"消息ID,回复时需要一致.\",\"properties\":{\"属性ID\":\"属性值\"}}")),
     //修改属性回复
     writePropertyReply("/*/properties/write/reply",
                        WritePropertyMessageReply.class,
                        route -> route
-                               .upstream(true)
-                               .downstream(false)
-                               .group("修改属性")
-                               .description("对平台下发的修改属性指令进行响应")
-                               .example("{\"messageId\":\"消息ID,与修改指令中的ID一致.\",\"properties\":{\"属性ID\":\"属性值\"}}")),
+                           .upstream(true)
+                           .downstream(false)
+                           .group("修改属性")
+                           .description("对平台下发的修改属性指令进行响应")
+                           .example("{\"messageId\":\"消息ID,与修改指令中的ID一致.\",\"properties\":{\"属性ID\":\"属性值\"}}")),
     //事件上报
     event("/*/event/*",
           EventMessage.class,
           route -> route
-                  .upstream(true)
-                  .downstream(false)
-                  .group("事件上报")
-                  .description("上报物模型事件数据")
-                  .example("{\"data\":{\"key\":\"value\"}}")) {
+              .upstream(true)
+              .downstream(false)
+              .group("事件上报")
+              .description("上报物模型事件数据")
+              .example("{\"data\":{\"key\":\"value\"}}")) {
         @Override
         protected void transMqttTopic(String[] topic) {
             topic[topic.length - 1] = "{eventId:事件ID}";
         }
 
         @Override
-        Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+        DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
             String event = topic[topic.length - 1];
 
-            return Mono.from(super.doDecode(mapper, topic, payload))
-                       .cast(EventMessage.class)
-                       .doOnNext(e -> e.setEvent(event))
-                       .cast(DeviceMessage.class);
+            EventMessage message = (EventMessage) super.doDecode(mapper, topic, payload);
+            message.setEvent(event);
+            return message;
         }
 
         @Override
@@ -106,31 +105,31 @@ public enum TopicMessageCodec {
     functionInvoke("/*/function/invoke",
                    FunctionInvokeMessage.class,
                    route -> route
-                           .upstream(false)
-                           .downstream(true)
-                           .group("调用功能")
-                           .description("平台下发功能调用指令")
-                           .example("{\"messageId\":\"消息ID,回复时需要一致.\"," +
-                                            "\"functionId\":\"功能标识\"," +
-                                            "\"inputs\":[{\"name\":\"参数名\",\"value\":\"参数值\"}]}")),
+                       .upstream(false)
+                       .downstream(true)
+                       .group("调用功能")
+                       .description("平台下发功能调用指令")
+                       .example("{\"messageId\":\"消息ID,回复时需要一致.\"," +
+                                    "\"functionId\":\"功能标识\"," +
+                                    "\"inputs\":[{\"name\":\"参数名\",\"value\":\"参数值\"}]}")),
     //调用功能回复
     functionInvokeReply("/*/function/invoke/reply",
                         FunctionInvokeMessageReply.class,
                         route -> route
-                                .upstream(true)
-                                .downstream(false)
-                                .group("调用功能")
-                                .description("设备响应平台下发的功能调用指令")
-                                .example("{\"messageId\":\"消息ID,与下发指令中的messageId一致.\"," +
-                                                 "\"output\":\"输出结果,格式与物模型中定义的类型一致\"")),
+                            .upstream(true)
+                            .downstream(false)
+                            .group("调用功能")
+                            .description("设备响应平台下发的功能调用指令")
+                            .example("{\"messageId\":\"消息ID,与下发指令中的messageId一致.\"," +
+                                         "\"output\":\"输出结果,格式与物模型中定义的类型一致\"")),
     //子设备消息
     child("/*/child/*/**",
           ChildDeviceMessage.class,
           route -> route
-                  .upstream(true)
-                  .downstream(true)
-                  .group("子设备消息")
-                  .description("网关上报或者平台下发子设备消息")) {
+              .upstream(true)
+              .downstream(true)
+              .group("子设备消息")
+              .description("网关上报或者平台下发子设备消息")) {
         @Override
         protected void transMqttTopic(String[] topic) {
             topic[topic.length - 1] = "{#:子设备相应操作的topic}";
@@ -138,19 +137,19 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        public Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
             String[] _topic = Arrays.copyOfRange(topic, 2, topic.length);
             _topic[0] = "";// topic以/开头所有第一位是空白
-            return TopicMessageCodec
-                    .decode(mapper, _topic, payload)
-                    .map(childMsg -> {
-                        ChildDeviceMessage msg = new ChildDeviceMessage();
-                        msg.setDeviceId(topic[1]);
-                        msg.setChildDeviceMessage(childMsg);
-                        msg.setTimestamp(childMsg.getTimestamp());
-                        msg.setMessageId(childMsg.getMessageId());
-                        return msg;
-                    });
+            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload);
+            if (childMsg != null) {
+                ChildDeviceMessage msg = new ChildDeviceMessage();
+                msg.setDeviceId(topic[1]);
+                msg.setChildDeviceMessage(childMsg);
+                msg.setTimestamp(childMsg.getTimestamp());
+                msg.setMessageId(childMsg.getMessageId());
+                return msg;
+            }
+            return null;
         }
 
         @Override
@@ -175,10 +174,10 @@ public enum TopicMessageCodec {
     childReply("/*/child-reply/*/**",
                ChildDeviceMessageReply.class,
                route -> route
-                       .upstream(true)
-                       .downstream(true)
-                       .group("子设备消息")
-                       .description("网关回复平台下发给子设备的指令结果")) {
+                   .upstream(true)
+                   .downstream(true)
+                   .group("子设备消息")
+                   .description("网关回复平台下发给子设备的指令结果")) {
         @Override
         protected void transMqttTopic(String[] topic) {
             topic[topic.length - 1] = "{#:子设备相应操作的topic}";
@@ -186,19 +185,20 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        public Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
             String[] _topic = Arrays.copyOfRange(topic, 2, topic.length);
             _topic[0] = "";// topic以/开头所有第一位是空白
-            return TopicMessageCodec
-                    .decode(mapper, _topic, payload)
-                    .map(childMsg -> {
-                        ChildDeviceMessageReply msg = new ChildDeviceMessageReply();
-                        msg.setDeviceId(topic[1]);
-                        msg.setChildDeviceMessage(childMsg);
-                        msg.setTimestamp(childMsg.getTimestamp());
-                        msg.setMessageId(childMsg.getMessageId());
-                        return msg;
-                    });
+            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload);
+            if (childMsg != null) {
+                ChildDeviceMessageReply msg = new ChildDeviceMessageReply();
+                msg.setDeviceId(topic[1]);
+                msg.setChildDeviceMessage(childMsg);
+                msg.setTimestamp(childMsg.getTimestamp());
+                msg.setMessageId(childMsg.getMessageId());
+                return msg;
+            }
+            return null;
+
         }
 
         @Override
@@ -253,11 +253,11 @@ public enum TopicMessageCodec {
     //透传设备消息
     direct("/*/direct", DirectDeviceMessage.class) {
         @Override
-        public Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+        public DirectDeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
             DirectDeviceMessage message = new DirectDeviceMessage();
             message.setDeviceId(topic[1]);
             message.setPayload(payload);
-            return Mono.just(message);
+            return message;
         }
     },
     //断开连接消息
@@ -266,14 +266,14 @@ public enum TopicMessageCodec {
     disconnectReply("/*/disconnect/reply", DisconnectDeviceMessageReply.class),
     //上线
     online("/*/online", DeviceOnlineMessage.class, builder -> builder
-            .upstream(true)
-            .group("状态管理")
-            .description("设备上线")),
+        .upstream(true)
+        .group("状态管理")
+        .description("设备上线")),
     //离线
     offline("/*/offline", DeviceOfflineMessage.class, builder -> builder
-            .upstream(true)
-            .group("状态管理")
-            .description("设备离线")),
+        .upstream(true)
+        .group("状态管理")
+        .description("设备离线")),
     //日志
     log("/*/log", DeviceLogMessage.class),
     //状态检查
@@ -282,32 +282,32 @@ public enum TopicMessageCodec {
 
     //数采相关
     collector("/*/collector/report", ReportCollectorDataMessage.class
-            , builder -> builder
-            .upstream(true)
-            .group("数采网关")
-            .description("上报数采点位数据")),
+        , builder -> builder
+        .upstream(true)
+        .group("数采网关")
+        .description("上报数采点位数据")),
     collectorRead("/*/collector/read",
                   ReadCollectorDataMessage.class,
                   builder -> builder
-                          .downstream(true)
-                          .group("数采网关")
-                          .description("平台读取点位数据")),
+                      .downstream(true)
+                      .group("数采网关")
+                      .description("平台读取点位数据")),
     collectorReadReply("/*/collector/read/reply",
                        ReadCollectorDataMessageReply.class,
                        builder -> builder
-                               .upstream(true)
-                               .group("数采网关")
-                               .description("平台读取点位数据结果回复")),
+                           .upstream(true)
+                           .group("数采网关")
+                           .description("平台读取点位数据结果回复")),
     collectorWrite("/*/collector/write", WriteCollectorDataMessage.class,
                    builder -> builder
-                           .downstream(true)
-                           .group("数采网关")
-                           .description("平台修改点位数据")),
+                       .downstream(true)
+                       .group("数采网关")
+                       .description("平台修改点位数据")),
     collectorWriteReply("/*/collector/write/reply", WriteCollectorDataMessageReply.class,
                         builder -> builder
-                                .upstream(true)
-                                .group("数采网关")
-                                .description("平台修改点位数据结果回复")),
+                            .upstream(true)
+                            .group("数采网关")
+                            .description("平台修改点位数据结果回复")),
     ;
 
     TopicMessageCodec(String topic,
@@ -345,29 +345,33 @@ public enum TopicMessageCodec {
             joiner.add(topic);
         }
         return MqttRoute
-                .builder(joiner.toString())
-                .qos(1);
+            .builder(joiner.toString())
+            .qos(1);
     }
 
     public MqttRoute getRoute() {
         return route;
     }
 
-    public static Flux<DeviceMessage> decode(ObjectMapper mapper, String[] topics, byte[] payload) {
-        return Mono
-                .justOrEmpty(fromTopic(topics))
-                .flatMapMany(topicMessageCodec -> topicMessageCodec.doDecode(mapper, topics, payload));
+    public static DeviceMessage decode(ObjectMapper mapper, String[] topics, byte[] payload) {
+        TopicMessageCodec codec = fromTopic(topics).orElse(null);
+
+        if (codec != null) {
+            return codec.doDecode(mapper, topics, payload);
+        }
+
+        return null;
     }
 
-    public static Flux<DeviceMessage> decode(ObjectMapper mapper, String topic, byte[] payload) {
+    public static DeviceMessage decode(ObjectMapper mapper, String topic, byte[] payload) {
         return decode(mapper, topic.split("/"), payload);
     }
 
     public static TopicPayload encode(ObjectMapper mapper, DeviceMessage message) {
 
         return fromMessage(message)
-                .orElseThrow(() -> new UnsupportedOperationException("unsupported message:" + message.getMessageType()))
-                .doEncode(mapper, message);
+            .orElseThrow(() -> new UnsupportedOperationException("unsupported message:" + message.getMessageType()))
+            .doEncode(mapper, message);
     }
 
     static Optional<TopicMessageCodec> fromTopic(String[] topic) {
@@ -388,14 +392,12 @@ public enum TopicMessageCodec {
         return Optional.empty();
     }
 
-    Publisher<DeviceMessage> doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
-        return Mono
-                .fromCallable(() -> {
-                    DeviceMessage message = mapper.readValue(payload, type);
-                    FastBeanCopier.copy(Collections.singletonMap("deviceId", topic[1]), message);
+    @SneakyThrows
+    DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+        DeviceMessage message = mapper.readValue(payload, type);
+        FastBeanCopier.copy(Collections.singletonMap("deviceId", topic[1]), message);
 
-                    return message;
-                });
+        return message;
     }
 
     @SneakyThrows

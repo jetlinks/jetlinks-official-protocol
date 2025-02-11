@@ -8,6 +8,7 @@ import org.jetlinks.core.message.event.EventMessage;
 import org.jetlinks.core.message.property.ReportPropertyMessage;
 import org.jetlinks.core.route.Route;
 import org.junit.Test;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import static org.junit.Assert.*;
@@ -28,8 +29,10 @@ public class TopicMessageCodecTest {
         System.out.println(payload.getPayload().length);
         assertEquals("/test/child/childId/properties/report", payload.getTopic());
 
-        TopicMessageCodec
-                .decode(objectMapper, payload.getTopic(), payload.getPayload())
+        Mono.justOrEmpty(
+                TopicMessageCodec
+                    .decode(objectMapper, payload.getTopic(), payload.getPayload())
+            )
                 .as(StepVerifier::create)
                 .expectNextMatches(deviceMessage -> {
                     System.out.println(message);
@@ -67,8 +70,7 @@ public class TopicMessageCodecTest {
 
 
         DeviceMessage msg = TopicMessageCodec
-                .decode(ObjectMappers.JSON_MAPPER, payload.getTopic(), payload.getPayload())
-                .blockLast();
+                .decode(ObjectMappers.JSON_MAPPER, payload.getTopic(), payload.getPayload());
         assertEquals(msg.toJson(), eventMessage.toJson());
     }
 }
