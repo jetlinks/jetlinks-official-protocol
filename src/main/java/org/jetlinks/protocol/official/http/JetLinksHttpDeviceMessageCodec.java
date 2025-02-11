@@ -182,16 +182,19 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
         try {
 
             //解码并发送给平台
-            context.sendToPlatformLater(
-                TraceHolder
-                    .traceBlocking(
+            context.async(
+                exchange
+                    .payload()
+                    .mapNotNull(payload -> {
+                        byte[] bytes = ByteBufUtil.getBytes(payload);
+                        return TopicMessageCodec.decode(ObjectMappers.JSON_MAPPER, paths, bytes);
+                    })
+                    .flatMap(context::sendToPlatformReactive)
+                    .as(MonoTracer.create(
                         DeviceTracer.SpanName.decode0(deviceId),
-                        (span) -> {
-                            DeviceMessage message = doDecode(exchange, paths);
-                            span.setAttributeLazy(DeviceTracer.SpanKey.message, exchange::print);
-                            return message;
-                        }));
+                        (span) -> span.setAttributeLazy(DeviceTracer.SpanKey.message, exchange::print)))
 
+            );
 
             //响应http
             context.async(
