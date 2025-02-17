@@ -137,7 +137,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
             return;
         }
-
+        // Bearer <token>
         String[] token = header.getValue()[0].split(" ");
         if (token.length == 1) {
             context.async(
@@ -147,7 +147,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
             return;
         }
         String basicToken = token[1];
-
+        //移除产品前缀
         String[] paths = TopicMessageCodec.removeProductPath(exchange.getPath());
         if (paths.length < 1) {
             context.async(
@@ -156,6 +156,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
             );
             return;
         }
+
         String deviceId = paths[1];
         BlockingDeviceOperator device = context.getDevice(deviceId);
 
@@ -169,7 +170,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
         String deviceToken = device.getConfigNow(BEARER_TOKEN);
 
-        if (Objects.equals(deviceToken, basicToken)) {
+        if (!Objects.equals(deviceToken, basicToken)) {
             logger(deviceId)
                 .warn("device token not match,device:{},token:{}", deviceId, basicToken);
             context.async(
