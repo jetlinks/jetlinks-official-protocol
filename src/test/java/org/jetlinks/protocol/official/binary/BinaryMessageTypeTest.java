@@ -5,16 +5,20 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DeviceOnlineMessage;
+import org.jetlinks.core.message.event.EventMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessage;
 import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
 import org.junit.Assert;
 import org.junit.Test;
 
+import com.alibaba.fastjson.JSONObject;
+
 import java.util.Collections;
 
 public class BinaryMessageTypeTest {
 
+     
 
     @Test
     public void testOnline() {
@@ -94,6 +98,25 @@ public class BinaryMessageTypeTest {
         doTest(reply);
 
     }
+
+    @Test
+    public void testEventReport() {
+        // 创建事件消息
+        EventMessage message = new EventMessage();
+        message.setDeviceId("test-device");
+        message.setMessageId("test123");
+        message.setEvent("test");  // 事件ID
+        
+        // 构建事件数据
+        JSONObject data = new JSONObject();
+        data.put("t", 123);
+        data.put("t2", 234);
+        message.setData(data);
+
+        // 使用通用测试方法
+        doTest(message);
+    }
+ 
 
     public void doTest(DeviceMessage message) {
 
