@@ -42,9 +42,8 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
         ByteBuf payload = context.getData().getPayload();
         //read index
         payload.readInt();
-
         //使用内置的logger,便于平台收集和管理日志.
-        Logger logger = logger();
+        Logger logger = context.logger();
 
         if (logger.isDebugEnabled()) {
             logger.debug("收到设备TCP报文: {}", ByteBufUtil.hexDump(payload));
