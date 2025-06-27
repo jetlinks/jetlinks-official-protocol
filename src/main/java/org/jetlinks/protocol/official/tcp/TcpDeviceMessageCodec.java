@@ -83,7 +83,8 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
             BlockingDeviceOperator device = context.getDevice(deviceId);
 
             if (device == null) {
-                logger().warn("设备不存在或未激活:{}", deviceId);
+                logger(deviceId).warn("设备不存在或未激活");
+                ack(message, AckCode.noAuth, context);
                 return;
             }
 

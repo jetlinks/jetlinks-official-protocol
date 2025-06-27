@@ -18,7 +18,19 @@ import java.util.Collections;
 
 public class BinaryMessageTypeTest {
 
-     
+
+    @Test
+    public void testDecode() {
+        ByteBuf buf = Unpooled.wrappedBuffer(
+            ByteBufUtil.decodeHexDump("0100000197af2acdd2000000097463702d6f66662d30000474657374")
+        );
+
+        DeviceMessage msg = BinaryMessageType.read(buf);
+
+        System.out.println(msg);
+        Assert.assertNotNull(msg);
+
+    }
 
     @Test
     public void testOnline() {
@@ -31,9 +43,9 @@ public class BinaryMessageTypeTest {
 
         System.out.println(ByteBufUtil.prettyHexDump(byteBuf));
         ByteBuf buf = Unpooled
-                .buffer()
-                .writeInt(byteBuf.readableBytes())
-                .writeBytes(byteBuf);
+            .buffer()
+            .writeInt(byteBuf.readableBytes())
+            .writeBytes(byteBuf);
 
         System.out.println(ByteBufUtil.prettyHexDump(buf));
         //登录报文
@@ -106,7 +118,7 @@ public class BinaryMessageTypeTest {
         message.setDeviceId("test-device");
         message.setMessageId("test123");
         message.setEvent("test");  // 事件ID
-        
+
         // 构建事件数据
         JSONObject data = new JSONObject();
         data.put("t", 123);
@@ -116,7 +128,7 @@ public class BinaryMessageTypeTest {
         // 使用通用测试方法
         doTest(message);
     }
- 
+
 
     public void doTest(DeviceMessage message) {
 
@@ -124,8 +136,8 @@ public class BinaryMessageTypeTest {
 
 //        System.out.println(ByteBufUtil.prettyHexDump(data));
         ByteBuf buf = Unpooled.buffer()
-                                    .writeInt(data.readableBytes())
-                                    .writeBytes(data);
+                              .writeInt(data.readableBytes())
+                              .writeBytes(data);
         System.out.println(ByteBufUtil.prettyHexDump(buf));
         System.out.println(ByteBufUtil.hexDump(buf));
         //将长度字节读取后，直接解析报文正文
