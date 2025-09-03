@@ -51,11 +51,17 @@ import java.util.Objects;
 public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec implements Authenticator {
 
     static final ConfigKey<String> BEARER_TOKEN = ConfigKey.of("bearer_token");
+    static final ConfigKey<String> WS_TOKEN = ConfigKey.of("ws_token");
 
     public static final DefaultConfigMetadata httpConfig = new DefaultConfigMetadata(
         "HTTP认证配置"
         , "使用HTTP Bearer Token进行认证")
         .add(BEARER_TOKEN.getKey(), "Token", "Token", new PasswordType());
+
+    public static final DefaultConfigMetadata webSocketConfig = new DefaultConfigMetadata(
+        "WebSocket认证配置"
+        , "使用WebSocket param进行认证")
+        .add(WS_TOKEN.getKey(), "token", "连接携带token参数", new PasswordType());
 
     public JetLinksHttpDeviceMessageCodec(ServiceContext context, Transport transport) {
         super(context, transport);
