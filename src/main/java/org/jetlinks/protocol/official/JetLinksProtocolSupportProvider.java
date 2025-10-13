@@ -28,9 +28,9 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
         return Mono.defer(() -> {
             CompositeProtocolSupport support = new CompositeProtocolSupport();
 
-            support.setId("jetlinks.v3.0");
-            support.setName("JetLinks V3.0");
-            support.setDescription("JetLinks Protocol Version 3.0");
+            support.setId("jetlinks.v3.2");
+            support.setName("JetLinks V3.2");
+            support.setDescription("JetLinks Protocol Version 3.2");
             //MQTT
             {
 
@@ -104,6 +104,7 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
 
             //Websocket
             JetLinksHttpDeviceMessageCodec codec = new JetLinksHttpDeviceMessageCodec(context, DefaultTransport.WebSocket);
+            support.addConfigMetadata(DefaultTransport.WebSocket, JetLinksHttpDeviceMessageCodec.webSocketConfig);
             support.addMessageCodecSupport(codec);
             support.addAuthenticator(DefaultTransport.WebSocket, codec);
 
