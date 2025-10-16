@@ -57,6 +57,11 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
         , "使用HTTP Bearer Token进行认证")
         .add(BEARER_TOKEN.getKey(), "Token", "Token", new PasswordType());
 
+    public static final DefaultConfigMetadata webSocketConfig = new DefaultConfigMetadata(
+        "WebSocket认证配置"
+        , "使用WebSocket param进行认证")
+        .add(BEARER_TOKEN.getKey(), "token", "连接携带token参数", new PasswordType());
+
     public JetLinksHttpDeviceMessageCodec(ServiceContext context, Transport transport) {
         super(context, transport);
     }
