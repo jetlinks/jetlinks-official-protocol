@@ -10,9 +10,13 @@ import org.jetlinks.core.message.*;
 import org.jetlinks.core.message.codec.*;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
+import org.jetlinks.core.principal.Identity;
+import org.jetlinks.core.principal.Principal;
+import org.jetlinks.core.principal.TokenCredential;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.protocol.official.binary.*;
 import org.jetlinks.supports.protocol.blocking.BlockingDeviceMessageCodec;
+import org.jetlinks.supports.protocol.blocking.BlockingDevicePrincipal;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageDecodeContext;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageEncodeContext;
 import org.reactivestreams.Publisher;
@@ -22,6 +26,7 @@ import reactor.core.publisher.Mono;
 import java.util.Objects;
 
 public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
+    public static final String identityType = "j_udp";
 
     public static final ConfigKey<String> CONFIG_KEY_SECURE_KEY = ConfigKey.of("secureKey");
 
@@ -39,27 +44,27 @@ public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
     protected void upstream(BlockingMessageDecodeContext context) {
         ByteBuf payload = context.getData().getPayload();
 
-        //todo 认证类型, 0 token,1 sign
-        byte authType = payload.readByte();
-
-        //前面是token
+        // 前面是token
         String token = (String) DataType.STRING.read(payload);
 
-        //接下来是消息
+        // 接下来是消息
         DeviceMessage message = BinaryMessageType.read(payload);
 
-        BlockingDeviceOperator device = context.getDevice(message.getDeviceId());
-        if (device == null) {
+        // 走平台的身份认证
+        BlockingDevicePrincipal principal = context.resolveDevice(
+            Principal.create(
+                Identity.create(identityType, message.getDeviceId()),
+                TokenCredential.create(token)
+            )
+        );
+
+        if (principal == null || !principal.isVerified()) {
             ack(message, AckCode.noAuth, context);
             return;
         }
 
-        String key = device.getConfigNow(CONFIG_KEY_SECURE_KEY);
-        if (Objects.equals(key, token)) {
-            context.sendToPlatformLater(message);
-            ack(message, AckCode.ok, context);
-
-        }
+        context.sendToPlatformLater(message);
+        ack(message, AckCode.ok, context);
     }
 
     @Override

@@ -5,7 +5,6 @@ import com.fasterxml.jackson.core.JsonParseException;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
-import lombok.extern.slf4j.Slf4j;
 import org.jetlinks.core.config.ConfigKey;
 import org.jetlinks.core.defaults.Authenticator;
 import org.jetlinks.core.defaults.BlockingDeviceOperator;
@@ -22,24 +21,26 @@ import org.jetlinks.core.message.codec.http.websocket.WebSocketMessage;
 import org.jetlinks.core.message.codec.http.websocket.WebSocketSessionMessage;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
+import org.jetlinks.core.principal.CredentialType;
+import org.jetlinks.core.principal.Identity;
+import org.jetlinks.core.principal.Principal;
+import org.jetlinks.core.principal.TokenCredential;
 import org.jetlinks.core.spi.EmptyServiceContext;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.core.trace.DeviceTracer;
-import org.jetlinks.core.trace.FluxTracer;
 import org.jetlinks.core.trace.MonoTracer;
-import org.jetlinks.core.trace.TraceHolder;
 import org.jetlinks.protocol.official.ObjectMappers;
 import org.jetlinks.protocol.official.TopicMessageCodec;
 import org.jetlinks.supports.protocol.blocking.BlockingDeviceMessageCodec;
+import org.jetlinks.supports.protocol.blocking.BlockingDevicePrincipal;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageDecodeContext;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageEncodeContext;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.util.StringUtils;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.Nonnull;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -50,17 +51,17 @@ import java.util.Objects;
  */
 public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec implements Authenticator {
 
-    static final ConfigKey<String> BEARER_TOKEN = ConfigKey.of("bearer_token");
+    public static final String identityType = "j_ws";
 
-    public static final DefaultConfigMetadata httpConfig = new DefaultConfigMetadata(
-        "HTTP认证配置"
-        , "使用HTTP Bearer Token进行认证")
-        .add(BEARER_TOKEN.getKey(), "Token", "Token", new PasswordType());
+    public static final ConfigKey<String> KEY_ACCESS_ID = ConfigKey.of("httpAccessId");
+
+    public static final DefaultConfigMetadata httpConfig = new DefaultConfigMetadata("HTTP认证配置", "")
+        .add(KEY_ACCESS_ID.getKey(), "AccessId", "AccessId", new PasswordType());
 
     public static final DefaultConfigMetadata webSocketConfig = new DefaultConfigMetadata(
         "WebSocket认证配置"
-        , "使用WebSocket param进行认证")
-        .add(BEARER_TOKEN.getKey(), "token", "连接携带token参数", new PasswordType());
+        , "")
+        .add(KEY_ACCESS_ID.getKey(), "AccessId", "AccessId", new PasswordType());
 
     public JetLinksHttpDeviceMessageCodec(ServiceContext context, Transport transport) {
         super(context, transport);
@@ -173,10 +174,15 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
             return;
         }
 
-        String deviceToken = device.getConfigNow(BEARER_TOKEN);
+        BlockingDevicePrincipal principal = context.resolveDevice(
+            Principal.create(
+                Identity.create(identityType, deviceId),
+                TokenCredential.create(basicToken)
+            )
+        );
 
         // token不正确
-        if (!Objects.equals(deviceToken, basicToken)) {
+        if (principal == null || !principal.isVerified()) {
             logger(deviceId)
                 .warn("device token not match,device:{},token:{}", deviceId, basicToken);
             context.async(
@@ -242,25 +248,29 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
             return Mono.just(AuthenticationResponse.error(400, "不支持的认证方式"));
         }
         WebsocketAuthenticationRequest req = ((WebsocketAuthenticationRequest) request);
-        String token = req
-            .getSocketSession()
-            .getQueryParameters()
-            .get("token");
+        Map<String, String> params = req.getSocketSession().getQueryParameters();
+        String accessId = params.get("accessId");
+        String accessToken = params.get("accessToken");
 
-        if (StringUtils.isEmpty(token)) {
-            return Mono.just(AuthenticationResponse.error(401, "认证参数错误"));
+        if (accessId == null || accessToken == null) {
+            return Mono.just(AuthenticationResponse.error(401, "缺少认证信息"));
         }
 
         return device
-            .getConfig("bearer_token")
-            //校验token
-            .filter(value -> Objects.equals(value.asString(), token))
-            .map(ignore -> AuthenticationResponse.success(device.getDeviceId()))
-            //未配置或者配置不对
+            .getCredential(
+                Identity.create(identityType, accessId),
+                CredentialType.token
+            )
+            .map(credential -> {
+                // 对比token
+                if (Objects.equals(credential.unwrap(TokenCredential.class).getAccessToken(),
+                                   accessToken)) {
+                    return AuthenticationResponse.success(device.getDeviceId());
+                }
+                return AuthenticationResponse.error(401, "认证信息错误");
+            })
             .switchIfEmpty(Mono.fromSupplier(() -> AuthenticationResponse.error(401, "token错误")));
     }
-
-    static AuthenticationResponse deviceNotFound = AuthenticationResponse.error(404, "设备不存在");
 
     @Override
     public Mono<AuthenticationResponse> authenticate(@Nonnull AuthenticationRequest request, @Nonnull DeviceRegistry registry) {
@@ -268,15 +278,30 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
             return Mono.just(AuthenticationResponse.error(400, "不支持的认证方式"));
         }
         WebsocketAuthenticationRequest req = ((WebsocketAuthenticationRequest) request);
-        String[] paths = TopicMessageCodec.removeProductPath(req.getSocketSession().getPath());
-        if (paths.length < 1) {
-            return Mono.just(AuthenticationResponse.error(400, "URL格式错误"));
+        Map<String, String> params = req.getSocketSession().getQueryParameters();
+        String accessId = params.get("accessId");
+        String accessToken = params.get("accessToken");
+
+        if (accessId == null || accessToken == null) {
+            return Mono.just(AuthenticationResponse.error(401, "缺少认证信息"));
         }
 
         return registry
-            .getDevice(paths[1])
-            .flatMap(device -> authenticate(request, device))
-            .defaultIfEmpty(deviceNotFound);
+            .resolveDevice(
+                Principal.create(
+                    Identity.create(identityType, accessId),
+                    TokenCredential.create(accessToken)
+                ))
+            .map(principal -> {
+                // 对比token
+                if (Objects.equals(principal.credential().unwrap(TokenCredential.class).getAccessToken(),
+                                   accessToken)) {
+                    return AuthenticationResponse.success(principal.getDevice().getDeviceId());
+                }
+                return AuthenticationResponse.error(401, "认证信息错误");
+            })
+            .switchIfEmpty(Mono.fromSupplier(() -> AuthenticationResponse.error(401, "token错误")));
+
 
     }
 }

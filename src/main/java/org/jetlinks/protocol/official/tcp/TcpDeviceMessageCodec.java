@@ -11,12 +11,16 @@ import org.jetlinks.core.message.codec.*;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
 import org.jetlinks.core.monitor.logger.Logger;
+import org.jetlinks.core.principal.Identity;
+import org.jetlinks.core.principal.Principal;
+import org.jetlinks.core.principal.TokenCredential;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.protocol.official.binary.AckCode;
 import org.jetlinks.protocol.official.binary.BinaryAcknowledgeDeviceMessage;
 import org.jetlinks.protocol.official.binary.BinaryDeviceOnlineMessage;
 import org.jetlinks.protocol.official.binary.BinaryMessageType;
 import org.jetlinks.supports.protocol.blocking.BlockingDeviceMessageCodec;
+import org.jetlinks.supports.protocol.blocking.BlockingDevicePrincipal;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageDecodeContext;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageEncodeContext;
 import org.reactivestreams.Publisher;
@@ -25,6 +29,7 @@ import reactor.core.publisher.Mono;
 import java.util.Objects;
 
 public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
+    public static final String identityType = "j_tcp";
 
     public static final ConfigKey<String> CONFIG_KEY_SECURE_KEY = ConfigKey.of("secureKey");
 
@@ -54,7 +59,7 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
             handleLogin(payload, context);
         } else {
             //直接解码并发送给平台
-            context.sendToPlatformLater(BinaryMessageType.read(payload, context.getDevice().getDeviceId()));
+            context.sendToPlatformLater(BinaryMessageType.read(payload, device.getDeviceId()));
         }
 
     }
@@ -80,22 +85,29 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
 
             String deviceId = message.getDeviceId();
 
-            BlockingDeviceOperator device = context.getDevice(deviceId);
+            // 使用平台的身份认进行认证
+            BlockingDevicePrincipal principal = context.resolveDevice(
+                Principal.create(
+                    Identity.create(identityType, deviceId),
+                    TokenCredential.create(token)
+                )
+            );
 
-            if (device == null) {
+            if (principal == null) {
                 logger(deviceId).warn("设备不存在或未激活");
                 ack(message, AckCode.noAuth, context);
                 return;
             }
 
-            String secureKey = device.getConfigNow(CONFIG_KEY_SECURE_KEY);
-            if (Objects.equals(secureKey, token)) {
+            if (principal.isVerified()) {
+                message.thingId("device", principal.getDevice().getDeviceId());
                 //发送上线消息给平台
                 context.sendToPlatformLater(message);
                 //应答设备
                 ack(message, AckCode.ok, context);
                 return;
             }
+
             //应答未授权
             ack(message, AckCode.noAuth, context);
         } else {

@@ -395,7 +395,7 @@ public enum TopicMessageCodec {
     @SneakyThrows
     DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
         DeviceMessage message = mapper.readValue(payload, type);
-        FastBeanCopier.copy(Collections.singletonMap("deviceId", topic[1]), message);
+        message.thingId("device",topic[1]);
 
         return message;
     }

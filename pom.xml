@@ -6,7 +6,7 @@
 
     <groupId>org.jetlinks</groupId>
     <artifactId>jetlinks-official-protocol</artifactId>
-    <version>3.2.0-SNAPSHOT</version>
+    <version>3.3.0-SNAPSHOT</version>
 
     <name>JetLinks</name>
     <url>https://jetlinks.org</url>
@@ -42,11 +42,9 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.build.locales>zh_CN</project.build.locales>
-        <java.version>1.8</java.version>
+        <java.version>17</java.version>
         <project.build.jdk>${java.version}</project.build.jdk>
-        <hsweb.framework.version>4.0.16</hsweb.framework.version>
-        <hsweb.expands.version>3.0.2</hsweb.expands.version>
-        <reactor.version>2020.0.6</reactor.version>
+        <hsweb.framework.version>5.0.1</hsweb.framework.version>
     </properties>
 
     <profiles>
@@ -203,7 +201,7 @@
         <dependency>
             <groupId>org.jetlinks</groupId>
             <artifactId>jetlinks-supports</artifactId>
-            <version>1.2.3</version>
+            <version>1.3.2-SNAPSHOT</version>
         </dependency>
 
         <dependency>
@@ -216,7 +214,6 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.38</version>
             <scope>provided</scope>
         </dependency>
 
@@ -225,17 +222,10 @@
             <artifactId>jackson-dataformat-cbor</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.13.2</version>
-            <scope>test</scope>
-        </dependency>
 
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-test</artifactId>
-            <version>3.4.18</version>
             <scope>test</scope>
         </dependency>
 
@@ -243,9 +233,15 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.2.11</version>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>io.vertx</groupId>
             <artifactId>vertx-core</artifactId>
@@ -257,9 +253,9 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>com.fasterxml.jackson</groupId>
-                <artifactId>jackson-bom</artifactId>
-                <version>2.11.4</version>
+                <groupId>org.jetlinks</groupId>
+                <artifactId>jetlinks</artifactId>
+                <version>1.3.2-SNAPSHOT</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

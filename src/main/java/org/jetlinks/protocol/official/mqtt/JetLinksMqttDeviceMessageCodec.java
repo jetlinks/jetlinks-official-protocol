@@ -11,9 +11,13 @@ import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DisconnectDeviceMessage;
 import org.jetlinks.core.message.codec.*;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
+import org.jetlinks.core.metadata.DeviceConfigScope;
 import org.jetlinks.core.metadata.types.EnumType;
 import org.jetlinks.core.metadata.types.PasswordType;
 import org.jetlinks.core.metadata.types.StringType;
+import org.jetlinks.core.principal.CredentialType;
+import org.jetlinks.core.principal.Identity;
+import org.jetlinks.core.principal.PasswordCredential;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.core.utils.TopicUtils;
 import org.jetlinks.protocol.official.FunctionalTopicHandlers;
@@ -26,6 +30,7 @@ import org.jetlinks.supports.protocol.blocking.BlockingMessageEncodeContext;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.Nonnull;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -67,15 +72,10 @@ import java.util.concurrent.TimeUnit;
 public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec implements Authenticator {
 
     public static final DefaultConfigMetadata mqttConfig = new DefaultConfigMetadata(
-        "MQTT认证配置"
-        , "MQTT认证时需要的配置,mqtt用户名" +
-            "timestamp为时间戳,与服务时间不能相差5分钟")
-        .add("secureType", "认证方式", "认证方式", new EnumType()
-            .addElement(EnumType.Element.of("plaintext", "明文认证", "明文认证"))
-            .addElement(EnumType.Element.of("md5", "MD5签名", "MD5签名方式认证"))
-        )
-        .add("secureId", "secureId", "密钥ID", new StringType())
-        .add("secureKey", "secureKey", "密钥KEY", new PasswordType());
+        "MQTT配置"
+        , "")
+        .add("mqttClientId", "clientId", "ClientId", new StringType())
+        .scope(DeviceConfigScope.device);
 
 
     private final ObjectMapper mapper;
@@ -170,59 +170,28 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
     public Mono<AuthenticationResponse> authenticate(@Nonnull AuthenticationRequest request, @Nonnull DeviceOperator deviceOperation) {
         if (request instanceof MqttAuthenticationRequest) {
             MqttAuthenticationRequest mqtt = ((MqttAuthenticationRequest) request);
-            // secureId|timestamp
-            String username = mqtt.getUsername();
-            // md5(secureId|timestamp|secureKey)
-            String password = mqtt.getPassword();
+
             return deviceOperation
-                .getConfigs("secureType", "secureId", "secureKey")
-                .map(conf -> {
-                    String type = conf.getValue("secureType").map(Value::asString).orElse("plaintext");
-                    String secureId = conf.getValue("secureId").map(Value::asString).orElse(null);
-                    String secureKey = conf.getValue("secureKey").map(Value::asString).orElse(null);
-                    if ("md5".equals(type)) {
-                        return validateMd5Token(
-                            deviceOperation.getDeviceId(),
-                            username,
-                            password,
-                            secureId,
-                            secureKey
-                        );
-                    } else if (Objects.equals(username, secureId) && Objects.equals(password, secureKey)) {
-                        return AuthenticationResponse.success(deviceOperation.getDeviceId());
-                    } else {
-                        return AuthenticationResponse.error(401, "用户名密码错误");
+                // 获取设备凭证
+                .getCredential(
+                    Identity.create(DefaultTransport.MQTT.getId(), mqtt.getClientId()),
+                    CredentialType.password
+                )
+                .map(cert -> {
+                    if (cert.isWrapperFor(PasswordCredential.class)) {
+                        PasswordCredential unwrap = cert.unwrap(PasswordCredential.class);
+                        // 简单比对.
+                        if (Objects.equals(unwrap.getUsername(), mqtt.getUsername())
+                            && Arrays.equals(unwrap.getPassword(), mqtt.getPassword().toCharArray())) {
+                            return AuthenticationResponse.success(deviceOperation.getDeviceId());
+                        } else {
+                            return AuthenticationResponse.error(401, "用户名密码错误");
+                        }
                     }
+                    return AuthenticationResponse.error(500, "身份配置错误");
                 });
         }
         return Mono.just(AuthenticationResponse.error(400, "不支持的授权类型:" + request));
     }
 
-
-    private AuthenticationResponse validateMd5Token(String deviceId,
-                                                    String username,
-                                                    String password,
-                                                    String secureId,
-                                                    String secureKey) {
-        try {
-            String[] arr = username.split("[|]");
-            if (arr.length <= 1) {
-                return AuthenticationResponse.error(401, "用户名格式错误");
-            }
-            long time = Long.parseLong(arr[1]);
-            //和设备时间差大于5分钟则认为无效
-            if (Math.abs(System.currentTimeMillis() - time) > TimeUnit.MINUTES.toMillis(5)) {
-                return AuthenticationResponse.error(401, "设备时间不同步");
-            }
-            String requestSecureId = arr[0];
-            String digest = DigestUtils.md5Hex(username + "|" + secureKey);
-            if (requestSecureId.equals(secureId) && digest.equals(password)) {
-                return AuthenticationResponse.success(deviceId);
-            } else {
-                return AuthenticationResponse.error(401, "密钥错误");
-            }
-        } catch (NumberFormatException e) {
-            return AuthenticationResponse.error(401, "用户名格式错误");
-        }
-    }
 }
