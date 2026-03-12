@@ -54,7 +54,7 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
                     .collect(Collectors.toList())
                 );
 
-                support.addConfigMetadata(DefaultTransport.MQTT, JetLinksMqttDeviceMessageCodec.mqttConfig);
+//                support.addConfigMetadata(DefaultTransport.MQTT, JetLinksMqttDeviceMessageCodec.mqttConfig);
 
                 support.setDocument(DefaultTransport.MQTT,
                                     "document-mqtt.md",
@@ -76,7 +76,7 @@ public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider 
                         metadata.setType(DefaultTransport.MQTT.getId());
                         // 用户可以自己动态配置ClientId
                         // 为空表示以平台设备ID为准,因为有的协议需要自定义设备标识,不能使用平台id.
-                        metadata.setIdentifier(MapUtils.getString(device.getConfiguration(), "mqttClientId"));
+//                        metadata.setIdentifier(MapUtils.getString(device.getConfiguration(), "mqttClientId"));
                         // 密码方式认证
                         metadata.setCredentialType(CredentialType.password);
                         return Flux.just(metadata);
