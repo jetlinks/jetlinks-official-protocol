@@ -15,6 +15,8 @@ import org.jetlinks.core.principal.Identity;
 import org.jetlinks.core.principal.Principal;
 import org.jetlinks.core.principal.TokenCredential;
 import org.jetlinks.core.spi.ServiceContext;
+import org.jetlinks.core.trace.DeviceTracer;
+import org.jetlinks.protocol.official.TopicMessageCodec;
 import org.jetlinks.protocol.official.binary.AckCode;
 import org.jetlinks.protocol.official.binary.BinaryAcknowledgeDeviceMessage;
 import org.jetlinks.protocol.official.binary.BinaryDeviceOnlineMessage;
@@ -47,32 +49,80 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
         ByteBuf payload = context.getData().getPayload();
         //read index
         payload.readInt();
-        //使用内置的logger,便于平台收集和管理日志.
-        Logger logger = context.logger();
 
-        if (logger.isDebugEnabled()) {
-            logger.debug("收到设备TCP报文: {}", ByteBufUtil.hexDump(payload));
+        if (logger().isDebugEnabled()) {
+            logger().debug("收到设备TCP报文: {}", ByteBufUtil.hexDump(payload));
         }
 
         BlockingDeviceOperator device = context.getDevice();
         if (device == null) {
+            if (logger().isDebugEnabled()) {
+                logger().debug("上下文的设备不存在，开始设备登录");
+            }
             handleLogin(payload, context);
         } else {
+            String deviceId = device.getDeviceId();
+            if (logger(deviceId).isDebugEnabled()) {
+                logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
+            }
+            DeviceMessage message = tracer(deviceId)
+                    .traceBlocking(DeviceTracer.OperationName.decode, _span -> {
+                        // 原始报文
+                        _span.setAttribute(DeviceTracer.SpanKey.input, ByteBufUtil.hexDump(payload));
+                        // 设备ID
+                        _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
+                        // 详细信息
+                        _span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
+
+                        DeviceMessage msg = BinaryMessageType.read(payload, deviceId);
+
+                        TopicMessageCodec codec = TopicMessageCodec.lookup(msg.getClass());
+                        if (codec != null) {
+                            _span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
+                        }
+                        // 输出报文
+                        _span.setAttribute(DeviceTracer.SpanKey.output, msg.toJson().toString());
+                        return msg;
+                    });
             //直接解码并发送给平台
-            context.sendToPlatformLater(BinaryMessageType.read(payload, device.getDeviceId()));
+            if (message != null) {
+                logger(deviceId).info("解码完成, 消息内容：{}", message.toJson());
+                context.sendToPlatformLater(message);
+            } else {
+                logger(deviceId).warn("解码结果消息为空");
+            }
         }
 
     }
 
     @Override
     protected void downstream(BlockingMessageEncodeContext context) {
-        context.sendToDeviceLater(
-            EncodedMessage.simple(
-                wrapByteByf(
-                    BinaryMessageType.write(context.getMessage(), Unpooled.buffer())
-                )
-            )
-        );
+        DeviceMessage deviceMessage = context.getMessage();
+        String deviceId = deviceMessage.getDeviceId();
+        
+        EncodedMessage encodedMessage = tracer(deviceId)
+                .traceBlocking(DeviceTracer.OperationName.encode, _span -> {
+                    // 原始消息
+                    _span.setAttribute(DeviceTracer.SpanKey.input, deviceMessage.toJson().toString());
+                    // 设备ID
+                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
+                    // 详细信息
+                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
+                    
+                    TopicMessageCodec codec = TopicMessageCodec.lookup(deviceMessage.getClass());
+                    if (codec != null) {
+                        _span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
+                    }
+                    
+                    ByteBuf binaryData = BinaryMessageType.write(deviceMessage, Unpooled.buffer());
+                    EncodedMessage msg = EncodedMessage.simple(wrapByteByf(binaryData));
+                    
+                    // 输出报文
+                    _span.setAttribute(DeviceTracer.SpanKey.output, ByteBufUtil.hexDump(msg.getPayload()));
+                    return msg;
+                });
+        
+        context.sendToDeviceLater(encodedMessage);
     }
 
     private void handleLogin(ByteBuf payload, BlockingMessageDecodeContext context) {
@@ -86,12 +136,31 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
             String deviceId = message.getDeviceId();
 
             // 使用平台的身份认进行认证
-            BlockingDevicePrincipal principal = context.resolveDevice(
-                Principal.create(
-                    Identity.create(identityType, deviceId),
-                    TokenCredential.create(token)
-                )
-            );
+            BlockingDevicePrincipal principal = tracer(deviceId)
+                    .traceBlocking(DeviceTracer.OperationName.auth, _span -> {
+                        _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
+                        _span.setAttribute(DeviceTracer.SpanKey.message, "设备身份token认证");
+                        _span.setAttribute(DeviceTracer.SpanKey.tag, "TCP直连");
+                        
+                        if (logger(deviceId).isDebugEnabled()) {
+                            logger(deviceId).debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
+                        }
+                        
+                        BlockingDevicePrincipal _principal = context.resolveDevice(
+                            Principal.create(
+                                Identity.create(identityType, deviceId),
+                                TokenCredential.create(token)
+                            )
+                        );
+                        
+                        if (_principal != null && _principal.isVerified()) {
+                            _span.setAttribute(DeviceTracer.SpanKey.output, "认证成功");
+                        } else {
+                            _span.setAttribute(DeviceTracer.SpanKey.output, "认证失败");
+                        }
+                        
+                        return _principal;
+                    });
 
             if (principal == null) {
                 logger(deviceId).warn("设备不存在或未激活");
@@ -111,6 +180,7 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
             //应答未授权
             ack(message, AckCode.noAuth, context);
         } else {
+            logger().warn("设备未授权");
             //应答未授权
             ack(message, AckCode.noAuth, context);
         }

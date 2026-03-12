@@ -2,7 +2,6 @@ package org.jetlinks.protocol.official.http;
 
 import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.core.JsonParseException;
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import org.jetlinks.core.config.ConfigKey;
@@ -12,7 +11,9 @@ import org.jetlinks.core.device.*;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DisconnectDeviceMessage;
 import org.jetlinks.core.message.MessageType;
-import org.jetlinks.core.message.codec.*;
+import org.jetlinks.core.message.codec.DefaultTransport;
+import org.jetlinks.core.message.codec.EncodedMessage;
+import org.jetlinks.core.message.codec.Transport;
 import org.jetlinks.core.message.codec.http.Header;
 import org.jetlinks.core.message.codec.http.HttpExchangeMessage;
 import org.jetlinks.core.message.codec.http.SimpleHttpResponseMessage;
@@ -84,17 +85,48 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
     @Override
     protected void downstream(BlockingMessageEncodeContext context) {
+        String deviceId = context.getMessage().getDeviceId();
+        JSONObject json = context.getMessage().toJson();
         if (context.getMessage() instanceof DisconnectDeviceMessage) {
+            tracer(deviceId)
+                    .traceBlocking(DeviceTracer.OperationName.encode, span -> {
+                        span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
+                        span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
+                        span.setAttribute(DeviceTracer.SpanKey.input, json.toJSONString());
+                        span.setAttribute(DeviceTracer.SpanKey.tag, "平台主动断开连接");
+                        context.disconnect();
+                        return null;
+                    });
             return;
         }
 
-        JSONObject json = context.getMessage().toJson();
+        EncodedMessage encodedMessage = tracer(deviceId)
+                .traceBlocking(DeviceTracer.OperationName.encode, _span -> {
+                    // 设备ID
+                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
+                    // 详细信息
+                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
+
+                    if (logger(deviceId).isTraceEnabled()) {
+                        logger(deviceId).debug(
+                            "使用TEXT数据类型，下发json报文：{}", json.toJSONString()
+                        );
+                    }
+
+                    DefaultWebSocketMessage msg = DefaultWebSocketMessage.of(
+                            WebSocketMessage.Type.TEXT,
+                            Unpooled.wrappedBuffer(json.toJSONString().getBytes()));
+                    TopicMessageCodec codec = TopicMessageCodec.lookup(context.getMessage().getClass());
+                    if (codec != null) {
+                        _span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
+                    }
+                    //  输出报文
+                    _span.setAttribute(DeviceTracer.SpanKey.output, msg.payloadAsString());
+                    return msg;
+                });
+
         //转为json 发送给设备
-        context.sendToDeviceLater(
-            DefaultWebSocketMessage.of(
-                WebSocketMessage.Type.TEXT,
-                Unpooled.wrappedBuffer(json.toJSONString().getBytes()))
-        );
+        context.sendToDeviceLater(encodedMessage);
 
     }
 
@@ -120,9 +152,26 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
     private void decodeWebsocket(BlockingMessageDecodeContext context) {
         WebSocketSessionMessage msg = ((WebSocketSessionMessage) context.getData());
 
-        DeviceMessage message = (DeviceMessage) MessageType
-            .convertMessage(msg.payloadAsJson())
-            .orElse(null);
+        DeviceMessage message = tracer()
+                .traceBlocking(DeviceTracer.OperationName.decode, _span -> {
+                    DeviceMessage _msg = (DeviceMessage) MessageType
+                            .convertMessage(msg.payloadAsJson())
+                            .orElse(null);
+                    // 原始报文
+                    _span.setAttribute(DeviceTracer.SpanKey.input, msg.payloadAsString());
+                    // 详细信息
+                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
+
+                    if (_msg != null) {
+                        // 设备ID
+                        _span.setAttribute(DeviceTracer.SpanKey.deviceId, _msg.getDeviceId());
+                        // 输出报文
+                        _span.setAttribute(DeviceTracer.SpanKey.output, _msg.toJson().toString());
+                    } else {
+                        logger().warn("输出消息为空");
+                    }
+                    return _msg;
+                });
 
         context.sendToPlatformLater(message);
 
@@ -135,7 +184,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
         // Authorization: Bearer <token>
         Header header = exchange.getHeader(HttpHeaders.AUTHORIZATION).orElse(null);
         if (header == null || header.getValue() == null || header.getValue().length == 0) {
-
+            logger().warn("请求头不能为空");
             context.async(
                 exchange
                     .response(unauthorized("Authorization header is required"))
@@ -146,6 +195,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
         // Bearer <token>
         String[] token = header.getValue()[0].split(" ");
         if (token.length == 1) {
+            logger().warn("token格式错误，token:{}", header.getValue()[0]);
             context.async(
                 exchange
                     .response(unauthorized("Illegal token format"))
@@ -154,8 +204,12 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
         }
         String basicToken = token[1];
         // 移除产品前缀
+        if (logger().isDebugEnabled()) {
+            logger().debug("移除uri中的产品前缀。原始值：{}", exchange.getPath());
+        }
         String[] paths = TopicMessageCodec.removeProductPath(exchange.getPath());
         if (paths.length < 1) {
+            logger().warn("path解析错误，path为空");
             context.async(
                 exchange
                     .response(badRequest())
@@ -167,6 +221,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
         BlockingDeviceOperator device = context.getDevice(deviceId);
         // 设备不存在
         if (device == null) {
+            logger().warn("设备不存在，id：{}", deviceId);
             context.async(
                 exchange
                     .response(unauthorized("Device no register"))
@@ -184,7 +239,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
         // token不正确
         if (principal == null || !principal.isVerified()) {
             logger(deviceId)
-                .warn("device token not match,device:{},token:{}", deviceId, basicToken);
+                .warn("token不匹配，device:{},token:{}", deviceId, basicToken);
             context.async(
                 exchange
                     .response(unauthorized("Token not match"))
@@ -198,10 +253,33 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
             context.async(
                 exchange
                     .payload()
-                    .mapNotNull(payload -> {
-                        byte[] bytes = ByteBufUtil.getBytes(payload);
-                        return TopicMessageCodec.decode(ObjectMappers.JSON_MAPPER, paths, bytes);
-                    })
+                    .mapNotNull(payload -> tracer(deviceId)
+                            .traceBlocking(DeviceTracer.OperationName.decode, _span -> {
+                                String input = ByteBufUtil.hexDump(payload);
+                                if (logger(deviceId).isDebugEnabled()) {
+                                    logger(deviceId).debug(
+                                            "请求原始报文：{}", ByteBufUtil.hexDump(payload)
+                                    );
+                                }
+                                // 原始报文
+                                _span.setAttribute(DeviceTracer.SpanKey.input, input);
+                                // 设备ID
+                                _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
+                                // 详细信息
+                                _span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
+
+                                byte[] bytes = ByteBufUtil.getBytes(payload);
+                                DeviceMessage msg = TopicMessageCodec.decode(
+                                        ObjectMappers.JSON_MAPPER, paths, bytes, _span, logger(deviceId)
+                                );
+                                if (msg != null) {
+                                    // 输出报文
+                                    _span.setAttribute(DeviceTracer.SpanKey.output, msg.toJson().toString());
+                                } else {
+                                    logger(deviceId).warn("输出消息为空");
+                                }
+                                return msg;
+                            }))
                     .flatMap(context::sendToPlatformReactive)
                     .as(MonoTracer.create(
                         DeviceTracer.SpanName.decode0(deviceId),
@@ -223,17 +301,17 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
     }
 
-    private DeviceMessage doDecode(HttpExchangeMessage message, String[] paths) {
-        ByteBuf body = await(message.payload());
-
-        if (body == null) {
-            body = Unpooled.EMPTY_BUFFER;
-        }
-
-        byte[] bytes = ByteBufUtil.getBytes(body);
-
-        return TopicMessageCodec.decode(ObjectMappers.JSON_MAPPER, paths, bytes);
-    }
+//    private DeviceMessage doDecode(HttpExchangeMessage message, String[] paths) {
+//        ByteBuf body = await(message.payload());
+//
+//        if (body == null) {
+//            body = Unpooled.EMPTY_BUFFER;
+//        }
+//
+//        byte[] bytes = ByteBufUtil.getBytes(body);
+//
+//        return TopicMessageCodec.decode(ObjectMappers.JSON_MAPPER, paths, bytes);
+//    }
 
     public String getErrorMessage(Throwable err) {
         if (err instanceof JsonParseException) {
@@ -244,64 +322,103 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
     @Override
     public Mono<AuthenticationResponse> authenticate(@Nonnull AuthenticationRequest request, @Nonnull DeviceOperator device) {
-        if (!(request instanceof WebsocketAuthenticationRequest)) {
-            return Mono.just(AuthenticationResponse.error(400, "不支持的认证方式"));
-        }
-        WebsocketAuthenticationRequest req = ((WebsocketAuthenticationRequest) request);
-        Map<String, String> params = req.getSocketSession().getQueryParameters();
-        String accessId = params.get("accessId");
-        String accessToken = params.get("accessToken");
+       return Mono
+               .defer(() -> {
+                   if (!(request instanceof WebsocketAuthenticationRequest)) {
+                       return Mono.just(AuthenticationResponse.error(400, "不支持的认证方式"));
+                   }
+                   WebsocketAuthenticationRequest req = ((WebsocketAuthenticationRequest) request);
+                   Map<String, String> params = req.getSocketSession().getQueryParameters();
+                   String accessId = params.get("accessId");
+                   String accessToken = params.get("accessToken");
+                   if (logger(device.getDeviceId()).isDebugEnabled()) {
+                       logger(device.getDeviceId()).info(
+                               "开始认证，请求参数：accessId：{}，accessToken：{}", accessId, accessToken
+                       );
+                   }
 
-        if (accessId == null || accessToken == null) {
-            return Mono.just(AuthenticationResponse.error(401, "缺少认证信息"));
-        }
+                   if (accessId == null || accessToken == null) {
+                       return Mono.just(AuthenticationResponse.error(401, "缺少认证信息"));
+                   }
 
-        return device
-            .getCredential(
-                Identity.create(identityType, accessId),
-                CredentialType.token
-            )
-            .map(credential -> {
-                // 对比token
-                if (Objects.equals(credential.unwrap(TokenCredential.class).getAccessToken(),
-                                   accessToken)) {
-                    return AuthenticationResponse.success(device.getDeviceId());
-                }
-                return AuthenticationResponse.error(401, "认证信息错误");
-            })
-            .switchIfEmpty(Mono.fromSupplier(() -> AuthenticationResponse.error(401, "token错误")));
+                   return device
+                           .getCredential(
+                                   Identity.create(identityType, accessId),
+                                   CredentialType.token
+                           )
+                           .map(credential -> {
+                               String accessTokenCredential = credential.unwrap(TokenCredential.class).getAccessToken();
+                               if (logger(device.getDeviceId()).isDebugEnabled()) {
+                                   logger(device.getDeviceId()).debug(
+                                           "成功设备接入身份凭证信息，accessToken：{}", accessTokenCredential
+                                   );
+                               }
+                               // 对比token
+                               if (Objects.equals(credential.unwrap(TokenCredential.class).getAccessToken(),
+                                                  accessToken)) {
+                                   return AuthenticationResponse.success(device.getDeviceId());
+                               }
+                               return AuthenticationResponse.error(401, "认证信息错误");
+                           })
+                           .switchIfEmpty(Mono.fromSupplier(() -> AuthenticationResponse.error(401, "token错误")));
+               })
+               .as(tracer()
+                           .traceMono(DeviceTracer.OperationName.auth, (ctx, _span) -> {
+                               _span.setAttribute(DeviceTracer.SpanKey.message, "设备身份token认证");
+                               _span.setAttribute(DeviceTracer.SpanKey.tag, "HTTP推送");
+                           }));
     }
 
     @Override
     public Mono<AuthenticationResponse> authenticate(@Nonnull AuthenticationRequest request, @Nonnull DeviceRegistry registry) {
-        if (!(request instanceof WebsocketAuthenticationRequest)) {
-            return Mono.just(AuthenticationResponse.error(400, "不支持的认证方式"));
-        }
-        WebsocketAuthenticationRequest req = ((WebsocketAuthenticationRequest) request);
-        Map<String, String> params = req.getSocketSession().getQueryParameters();
-        String accessId = params.get("accessId");
-        String accessToken = params.get("accessToken");
+        return Mono
+                .defer(() -> {
+                    if (!(request instanceof WebsocketAuthenticationRequest)) {
+                        return Mono.just(AuthenticationResponse.error(400, "不支持的认证方式"));
+                    }
+                    WebsocketAuthenticationRequest req = ((WebsocketAuthenticationRequest) request);
+                    Map<String, String> params = req.getSocketSession().getQueryParameters();
+                    String accessId = params.get("accessId");
+                    String accessToken = params.get("accessToken");
+                    if (logger().isDebugEnabled()) {
+                        logger().info(
+                                "开始认证，请求参数：accessId：{}，accessToken：{}", accessId, accessToken
+                        );
+                    }
 
-        if (accessId == null || accessToken == null) {
-            return Mono.just(AuthenticationResponse.error(401, "缺少认证信息"));
-        }
+                    if (accessId == null || accessToken == null) {
+                        return Mono.just(AuthenticationResponse.error(401, "缺少认证信息"));
+                    }
 
-        return registry
-            .resolveDevice(
-                Principal.create(
-                    Identity.create(identityType, accessId),
-                    TokenCredential.create(accessToken)
-                ))
-            .map(principal -> {
-                // 对比token
-                if (Objects.equals(principal.credential().unwrap(TokenCredential.class).getAccessToken(),
-                                   accessToken)) {
-                    return AuthenticationResponse.success(principal.getDevice().getDeviceId());
-                }
-                return AuthenticationResponse.error(401, "认证信息错误");
-            })
-            .switchIfEmpty(Mono.fromSupplier(() -> AuthenticationResponse.error(401, "token错误")));
-
-
+                    return registry
+                            .resolveDevice(
+                                    Principal.create(
+                                            Identity.create(identityType, accessId),
+                                            TokenCredential.create(accessToken)
+                                    ))
+                            .map(principal -> {
+                                String deviceId = principal.getDevice().getDeviceId();
+                                String accessTokenCredential = principal
+                                        .credential()
+                                        .unwrap(TokenCredential.class)
+                                        .getAccessToken();
+                                if (logger(deviceId).isDebugEnabled()) {
+                                    logger(deviceId).debug(
+                                            "成功设备接入身份凭证信息，deviceId：{}，accessToken：{}", deviceId, accessTokenCredential
+                                    );
+                                }
+                                // 对比token
+                                if (Objects.equals(accessTokenCredential, accessToken)) {
+                                    return AuthenticationResponse.success(deviceId);
+                                }
+                                return AuthenticationResponse.error(401, "认证信息错误");
+                            })
+                            .switchIfEmpty(Mono.fromSupplier(() -> AuthenticationResponse.error(401, "token错误")));
+                })
+                .as(tracer()
+                            .traceMono(DeviceTracer.OperationName.auth, (ctx, _span) -> {
+                                _span.setAttribute(DeviceTracer.SpanKey.message, "设备身份token认证");
+                                _span.setAttribute(DeviceTracer.SpanKey.tag, "HTTP推送");
+                            }));
     }
 }

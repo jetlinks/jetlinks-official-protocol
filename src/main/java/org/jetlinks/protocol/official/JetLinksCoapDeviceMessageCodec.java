@@ -1,8 +1,6 @@
 package org.jetlinks.protocol.official;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
-import org.eclipse.californium.core.coap.CoAP;
 import org.eclipse.californium.core.coap.MediaTypeRegistry;
 import org.eclipse.californium.core.coap.OptionNumberRegistry;
 import org.jetlinks.core.Value;
@@ -11,7 +9,6 @@ import org.jetlinks.core.defaults.BlockingDeviceOperator;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.codec.CoapMessage;
 import org.jetlinks.core.message.codec.DefaultTransport;
-import org.jetlinks.core.message.codec.MessageDecodeContext;
 import org.jetlinks.core.message.codec.Transport;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.DeviceConfigScope;
@@ -23,9 +20,6 @@ import org.jetlinks.core.trace.DeviceTracer;
 import org.jetlinks.protocol.official.cipher.Ciphers;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageDecodeContext;
 import org.springframework.http.MediaType;
-import org.springframework.util.StringUtils;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.util.function.Consumer;
 
@@ -52,6 +46,11 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
                                    Consumer<Object> response) {
         String path = getPath(message);
         String deviceId = getDeviceId(message);
+        
+        if (logger(deviceId).isDebugEnabled()) {
+            logger(deviceId).debug("收到设备CoAP报文，path: {}, deviceId: {}", path, deviceId);
+        }
+        
         // content type
         boolean cbor = message
             .getOption(OptionNumberRegistry.CONTENT_FORMAT)
@@ -66,15 +65,21 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
         BlockingDeviceOperator device = context.getDevice(deviceId);
 
         if (device == null) {
+            logger(deviceId).warn("设备不存在，deviceId: {}", deviceId);
             return null;
         }
 
         //链路追踪 设备解码
         return tracer(deviceId)
             .traceBlocking(
-                "decode",
+                DeviceTracer.OperationName.decode,
                 (span) -> {
-                    span.setAttributeLazy(DeviceTracer.SpanKey.message, () -> message.print(true));
+                    // 原始报文
+                    span.setAttribute(DeviceTracer.SpanKey.input, message.payloadAsString());
+                    // 设备ID
+                    span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
+                    // 详细信息
+                    span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
 
                     Values configs = device.getConfigsNow("encAlg", "secureKey");
                     Ciphers ciphers = configs
@@ -86,7 +91,7 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
                     byte[] payload = ciphers.decrypt(message.payloadAsBytes(), secureKey);
 
                     DeviceMessage msg = TopicMessageCodec
-                        .decode(objectMapper, TopicMessageCodec.removeProductPath(path), payload);
+                        .decode(objectMapper, TopicMessageCodec.removeProductPath(path), payload, span, logger(deviceId));
                     if (msg == null) {
                         msg = FunctionalTopicHandlers
                             .handle(device,
@@ -95,6 +100,19 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
                                     objectMapper,
                                     reply -> response.accept(reply.getPayload()));
                     }
+                    
+                    if (msg != null) {
+                        TopicMessageCodec codec = TopicMessageCodec.lookup(msg.getClass());
+                        if (codec != null) {
+                            span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
+                        }
+                        // 输出报文
+                        span.setAttribute(DeviceTracer.SpanKey.output, msg.toJson().toString());
+                        logger(deviceId).info("解码完成, 消息内容：{}", msg.toJson());
+                    } else {
+                        logger(deviceId).warn("解码结果消息为空");
+                    }
+                    
                     return msg;
                 });
     }
