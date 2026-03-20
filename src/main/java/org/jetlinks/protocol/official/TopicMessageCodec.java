@@ -88,12 +88,12 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, ReactiveSpan span, Logger logger) {
+        DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
             String event = topic[topic.length - 1];
             if (logger.isDebugEnabled()) {
                 logger.debug("获取事件ID：{}", event);
             }
-            EventMessage message = (EventMessage) super.doDecode(mapper, topic, payload, span, logger);
+            EventMessage message = (EventMessage) super.doDecode(mapper, topic, payload, logger);
             message.setEvent(event);
             return message;
         }
@@ -142,13 +142,13 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, ReactiveSpan span, Logger logger) {
+        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
             String[] _topic = Arrays.copyOfRange(topic, 2, topic.length);
             _topic[0] = "";// topic以/开头所有第一位是空白
             if (logger.isDebugEnabled()) {
                 logger.debug("子设备消息topic：{}", String.join("/", _topic));
             }
-            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload, span, logger);
+            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload, logger);
             if (childMsg != null) {
                 ChildDeviceMessage msg = new ChildDeviceMessage();
                 msg.setDeviceId(topic[1]);
@@ -161,12 +161,12 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        protected TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message, ReactiveSpan span, Logger logger) {
+        protected TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message, Logger logger) {
             ChildDeviceMessage deviceMessage = ((ChildDeviceMessage) message);
 
             DeviceMessage childMessage = ((DeviceMessage) deviceMessage.getChildDeviceMessage());
 
-            TopicPayload payload = TopicMessageCodec.encode(mapper, childMessage, span, logger);
+            TopicPayload payload = TopicMessageCodec.encode(mapper, childMessage, logger);
             String[] childTopic = payload.getTopic().split("/");
             if (logger.isDebugEnabled()) {
                 logger.debug("子设备消息topic：{}", String.join("/", childTopic));
@@ -199,14 +199,14 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, ReactiveSpan span, Logger logger) {
+        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
             String[] _topic = Arrays.copyOfRange(topic, 2, topic.length);
             _topic[0] = "";// topic以/开头所有第一位是空白
             if (logger.isDebugEnabled()) {
                 logger.debug("子设备消息topic：{}", String.join("/", _topic));
             }
 
-            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload, span, logger);
+            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload, logger);
             if (childMsg != null) {
                 ChildDeviceMessageReply msg = new ChildDeviceMessageReply();
                 msg.setDeviceId(topic[1]);
@@ -220,12 +220,12 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        protected TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message, ReactiveSpan span, Logger logger) {
+        protected TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message, Logger logger) {
             ChildDeviceMessageReply deviceMessage = ((ChildDeviceMessageReply) message);
 
             DeviceMessage childMessage = ((DeviceMessage) deviceMessage.getChildDeviceMessage());
 
-            TopicPayload payload = TopicMessageCodec.encode(mapper, childMessage, span, logger);
+            TopicPayload payload = TopicMessageCodec.encode(mapper, childMessage, logger);
             String[] childTopic = payload.getTopic().split("/");
             if (logger.isDebugEnabled()) {
                 logger.debug("子设备topic：", String.join("/", childTopic));
@@ -277,7 +277,7 @@ public enum TopicMessageCodec {
     //透传设备消息
     direct("/*/direct", DirectDeviceMessage.class) {
         @Override
-        public DirectDeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, ReactiveSpan span, Logger logger) {
+        public DirectDeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
             DirectDeviceMessage message = new DirectDeviceMessage();
             message.setDeviceId(topic[1]);
             message.setPayload(payload);
@@ -377,28 +377,27 @@ public enum TopicMessageCodec {
         return route;
     }
 
-    public static DeviceMessage decode(ObjectMapper mapper, String[] topics, byte[] payload, ReactiveSpan span, Logger logger) {
+    public static DeviceMessage decode(ObjectMapper mapper, String[] topics, byte[] payload, Logger logger) {
         TopicMessageCodec codec = fromTopic(topics).orElse(null);
         if (codec != null) {
             if (logger.isDebugEnabled()) {
                 logger.debug("根据topic匹配到消息类型，{}/{}", codec.name(), codec.getRoute().getGroup());
             }
-            span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
-            return codec.doDecode(mapper, topics, payload, span, logger);
+            return codec.doDecode(mapper, topics, payload, logger);
         }
         logger.warn("无法匹配消息类型, topic: ", String.join("/", topics));
         return null;
     }
 
-    public static DeviceMessage decode(ObjectMapper mapper, String topic, byte[] payload, ReactiveSpan span, Logger logger) {
-        return decode(mapper, topic.split("/"), payload, span, logger);
+    public static DeviceMessage decode(ObjectMapper mapper, String topic, byte[] payload,  Logger logger) {
+        return decode(mapper, topic.split("/"), payload, logger);
     }
 
-    public static TopicPayload encode(ObjectMapper mapper, DeviceMessage message, ReactiveSpan span, Logger logger) {
+    public static TopicPayload encode(ObjectMapper mapper, DeviceMessage message, Logger logger) {
 
-        return fromMessage(message, span, logger)
+        return fromMessage(message, logger)
             .orElseThrow(() -> new UnsupportedOperationException("unsupported message:" + message.getMessageType()))
-            .doEncode(mapper, message, span, logger);
+            .doEncode(mapper, message, logger);
     }
 
     static Optional<TopicMessageCodec> fromTopic(String[] topic) {
@@ -410,13 +409,12 @@ public enum TopicMessageCodec {
         return Optional.empty();
     }
 
-    static Optional<TopicMessageCodec> fromMessage(DeviceMessage message, ReactiveSpan span, Logger logger) {
+    static Optional<TopicMessageCodec> fromMessage(DeviceMessage message, Logger logger) {
         for (TopicMessageCodec value : values()) {
             if (value.type == message.getClass()) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("根据topic匹配到消息类型，{}/{}", value.name(), value.getRoute().getGroup());
                 }
-                span.setAttribute(DeviceTracer.SpanKey.tag, value.getRoute().getGroup());
                 return Optional.of(value);
             }
         }
@@ -425,7 +423,7 @@ public enum TopicMessageCodec {
     }
 
     @SneakyThrows
-    DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, ReactiveSpan span, Logger logger) {
+    DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
         DeviceMessage message = mapper.readValue(payload, type);
         if (logger.isDebugEnabled()) {
             logger.debug("读取json内容：{}", message.toJson());
@@ -441,15 +439,15 @@ public enum TopicMessageCodec {
     }
 
     @SneakyThrows
-    TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message, ReactiveSpan span, Logger logger) {
+    TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message, Logger logger) {
         refactorTopic(topics, message);
         return TopicPayload.of(String.join("/", topics), mapper.writeValueAsBytes(message));
     }
 
     @SneakyThrows
-    TopicPayload doEncode(ObjectMapper mapper, DeviceMessage message, ReactiveSpan span, Logger logger) {
+    TopicPayload doEncode(ObjectMapper mapper, DeviceMessage message, Logger logger) {
         String[] topics = Arrays.copyOf(pattern, pattern.length);
-        return doEncode(mapper, topics, message, span, logger);
+        return doEncode(mapper, topics, message, logger);
     }
 
     void refactorTopic(String[] topics, DeviceMessage message) {

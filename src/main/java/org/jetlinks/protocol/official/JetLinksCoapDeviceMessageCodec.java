@@ -46,10 +46,8 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
                                    Consumer<Object> response) {
         String path = getPath(message);
         String deviceId = getDeviceId(message);
-        
-        if (logger(deviceId).isDebugEnabled()) {
-            logger(deviceId).debug("收到设备CoAP报文，path: {}, deviceId: {}", path, deviceId);
-        }
+
+        logger(deviceId).debug("收到设备CoAP报文，path: {}, deviceId: {}", path, deviceId);
         
         // content type
         boolean cbor = message
@@ -74,12 +72,7 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
             .traceBlocking(
                 DeviceTracer.OperationName.decode,
                 (span) -> {
-                    // 原始报文
-                    span.setAttribute(DeviceTracer.SpanKey.input, message.payloadAsString());
-                    // 设备ID
-                    span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                    // 详细信息
-                    span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
+                    span.setAttributeLazy(DeviceTracer.SpanKey.message, () -> message.print(true));
 
                     Values configs = device.getConfigsNow("encAlg", "secureKey");
                     Ciphers ciphers = configs
@@ -91,7 +84,7 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
                     byte[] payload = ciphers.decrypt(message.payloadAsBytes(), secureKey);
 
                     DeviceMessage msg = TopicMessageCodec
-                        .decode(objectMapper, TopicMessageCodec.removeProductPath(path), payload, span, logger(deviceId));
+                        .decode(objectMapper, TopicMessageCodec.removeProductPath(path), payload, logger(deviceId));
                     if (msg == null) {
                         msg = FunctionalTopicHandlers
                             .handle(device,
@@ -102,15 +95,7 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
                     }
                     
                     if (msg != null) {
-                        TopicMessageCodec codec = TopicMessageCodec.lookup(msg.getClass());
-                        if (codec != null) {
-                            span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
-                        }
-                        // 输出报文
-                        span.setAttribute(DeviceTracer.SpanKey.output, msg.toJson().toString());
                         logger(deviceId).info("解码完成, 消息内容：{}", msg.toJson());
-                    } else {
-                        logger(deviceId).warn("解码结果消息为空");
                     }
                     
                     return msg;

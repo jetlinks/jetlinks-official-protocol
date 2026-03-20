@@ -57,10 +57,7 @@ public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
         // 接下来是消息
         DeviceMessage message = BinaryMessageType.read(payload);
         String deviceId = message.getDeviceId();
-
-        if (logger(deviceId).isDebugEnabled()) {
-            logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
-        }
+        logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
 
         // 走平台的身份认证
         BlockingDevicePrincipal principal = tracer(deviceId)
@@ -68,24 +65,24 @@ public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
                     _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
                     _span.setAttribute(DeviceTracer.SpanKey.message, "设备身份token认证");
                     _span.setAttribute(DeviceTracer.SpanKey.tag, "UDP直连");
-                    
+
                     if (logger(deviceId).isDebugEnabled()) {
                         logger(deviceId).debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
                     }
-                    
+
                     BlockingDevicePrincipal _principal = context.resolveDevice(
                         Principal.create(
                             Identity.create(identityType, deviceId),
                             TokenCredential.create(token)
                         )
                     );
-                    
+
                     if (_principal != null && _principal.isVerified()) {
                         _span.setAttribute(DeviceTracer.SpanKey.output, "认证成功");
                     } else {
                         _span.setAttribute(DeviceTracer.SpanKey.output, "认证失败");
                     }
-                    
+
                     return _principal;
                 });
 
@@ -95,63 +92,18 @@ public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
             return;
         }
 
-        DeviceMessage processedMessage = tracer(deviceId)
-                .traceBlocking(DeviceTracer.OperationName.decode, _span -> {
-                    // 原始报文
-                    _span.setAttribute(DeviceTracer.SpanKey.input, ByteBufUtil.hexDump(payload));
-                    // 设备ID
-                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                    // 详细信息
-                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
-
-                    TopicMessageCodec codec = TopicMessageCodec.lookup(message.getClass());
-                    if (codec != null) {
-                        _span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
-                    }
-                    // 输出报文
-                    _span.setAttribute(DeviceTracer.SpanKey.output, message.toJson().toString());
-                    return message;
-                });
-
-        if (processedMessage != null) {
-            logger(deviceId).info("解码完成, 消息内容：{}", processedMessage.toJson());
-            context.sendToPlatformLater(processedMessage);
-        } else {
-            logger(deviceId).warn("解码结果消息为空");
-        }
-        ack(processedMessage, AckCode.ok, context);
+        logger(deviceId).info("解码完成, 消息内容：{}", message.toJson());
+        context.sendToPlatformLater(message);
+        ack(message, AckCode.ok, context);
     }
 
     @Override
     protected void downstream(BlockingMessageEncodeContext context) {
         BlockingDeviceOperator device = context.getDevice();
-        DeviceMessage deviceMessage = context.getMessage();
-        String deviceId = deviceMessage.getDeviceId();
 
         String key = device.getConfigNow(CONFIG_KEY_SECURE_KEY);
 
-        EncodedMessage encodedMessage = tracer(deviceId)
-                .traceBlocking(DeviceTracer.OperationName.encode, _span -> {
-                    // 原始消息
-                    _span.setAttribute(DeviceTracer.SpanKey.input, deviceMessage.toJson().toString());
-                    // 设备ID
-                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                    // 详细信息
-                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
-                    
-                    TopicMessageCodec codec = TopicMessageCodec.lookup(deviceMessage.getClass());
-                    if (codec != null) {
-                        _span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
-                    }
-                    
-                    EncodedMessage msg = doEncode(deviceMessage, key);
-                    
-                    // 输出报文
-                    _span.setAttribute(DeviceTracer.SpanKey.output, ByteBufUtil.hexDump(msg.getPayload()));
-                    return msg;
-                });
-
-        context.sendToDeviceLater(encodedMessage);
+        context.sendToDeviceLater(doEncode(context.getMessage(), key));
     }
 
     public static ByteBuf wrapByteByf(ByteBuf payload) {

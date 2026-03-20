@@ -56,40 +56,16 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
 
         BlockingDeviceOperator device = context.getDevice();
         if (device == null) {
-            if (logger().isDebugEnabled()) {
-                logger().debug("上下文的设备不存在，开始设备登录");
-            }
+            logger().debug("上下文的设备不存在，开始设备登录");
             handleLogin(payload, context);
         } else {
             String deviceId = device.getDeviceId();
-            if (logger(deviceId).isDebugEnabled()) {
-                logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
-            }
-            DeviceMessage message = tracer(deviceId)
-                    .traceBlocking(DeviceTracer.OperationName.decode, _span -> {
-                        // 原始报文
-                        _span.setAttribute(DeviceTracer.SpanKey.input, ByteBufUtil.hexDump(payload));
-                        // 设备ID
-                        _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                        // 详细信息
-                        _span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
-
-                        DeviceMessage msg = BinaryMessageType.read(payload, deviceId);
-
-                        TopicMessageCodec codec = TopicMessageCodec.lookup(msg.getClass());
-                        if (codec != null) {
-                            _span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
-                        }
-                        // 输出报文
-                        _span.setAttribute(DeviceTracer.SpanKey.output, msg.toJson().toString());
-                        return msg;
-                    });
+            logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
+            DeviceMessage message = BinaryMessageType.read(payload, deviceId);
             //直接解码并发送给平台
             if (message != null) {
                 logger(deviceId).info("解码完成, 消息内容：{}", message.toJson());
                 context.sendToPlatformLater(message);
-            } else {
-                logger(deviceId).warn("解码结果消息为空");
             }
         }
 
@@ -97,32 +73,13 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
 
     @Override
     protected void downstream(BlockingMessageEncodeContext context) {
-        DeviceMessage deviceMessage = context.getMessage();
-        String deviceId = deviceMessage.getDeviceId();
-        
-        EncodedMessage encodedMessage = tracer(deviceId)
-                .traceBlocking(DeviceTracer.OperationName.encode, _span -> {
-                    // 原始消息
-                    _span.setAttribute(DeviceTracer.SpanKey.input, deviceMessage.toJson().toString());
-                    // 设备ID
-                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                    // 详细信息
-                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
-                    
-                    TopicMessageCodec codec = TopicMessageCodec.lookup(deviceMessage.getClass());
-                    if (codec != null) {
-                        _span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
-                    }
-                    
-                    ByteBuf binaryData = BinaryMessageType.write(deviceMessage, Unpooled.buffer());
-                    EncodedMessage msg = EncodedMessage.simple(wrapByteByf(binaryData));
-                    
-                    // 输出报文
-                    _span.setAttribute(DeviceTracer.SpanKey.output, ByteBufUtil.hexDump(msg.getPayload()));
-                    return msg;
-                });
-        
-        context.sendToDeviceLater(encodedMessage);
+        context.sendToDeviceLater(
+            EncodedMessage.simple(
+                wrapByteByf(
+                    BinaryMessageType.write(context.getMessage(), Unpooled.buffer())
+                )
+            )
+        );
     }
 
     private void handleLogin(ByteBuf payload, BlockingMessageDecodeContext context) {
@@ -141,11 +98,8 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
                         _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
                         _span.setAttribute(DeviceTracer.SpanKey.message, "设备身份token认证");
                         _span.setAttribute(DeviceTracer.SpanKey.tag, "TCP直连");
-                        
-                        if (logger(deviceId).isDebugEnabled()) {
-                            logger(deviceId).debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
-                        }
-                        
+
+                        logger(deviceId).debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
                         BlockingDevicePrincipal _principal = context.resolveDevice(
                             Principal.create(
                                 Identity.create(identityType, deviceId),

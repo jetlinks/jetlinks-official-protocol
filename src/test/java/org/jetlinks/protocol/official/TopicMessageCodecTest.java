@@ -26,13 +26,13 @@ public class TopicMessageCodecTest {
         message.setTimestamp(msg.getTimestamp());
 
 
-        TopicPayload payload = TopicMessageCodec.child.doEncode(objectMapper, message, ReactiveSpan.noop(), Logger.noop());
+        TopicPayload payload = TopicMessageCodec.child.doEncode(objectMapper, message, Logger.noop());
         System.out.println(payload.getPayload().length);
         assertEquals("/test/child/childId/properties/report", payload.getTopic());
 
         Mono.justOrEmpty(
                 TopicMessageCodec
-                    .decode(objectMapper, payload.getTopic(), payload.getPayload(), ReactiveSpan.noop(), Logger.noop())
+                    .decode(objectMapper, payload.getTopic(), payload.getPayload(), Logger.noop())
             )
                 .as(StepVerifier::create)
                 .expectNextMatches(deviceMessage -> {
@@ -66,12 +66,12 @@ public class TopicMessageCodecTest {
         eventMessage.setDeviceId("test-device");
         eventMessage.setData("123");
 
-        TopicPayload payload = TopicMessageCodec.encode(ObjectMappers.JSON_MAPPER, eventMessage, ReactiveSpan.noop(), Logger.noop());
+        TopicPayload payload = TopicMessageCodec.encode(ObjectMappers.JSON_MAPPER, eventMessage, Logger.noop());
         assertEquals(payload.getTopic(), "/test-device/event/test");
 
 
         DeviceMessage msg = TopicMessageCodec
-                .decode(ObjectMappers.JSON_MAPPER, payload.getTopic(), payload.getPayload(), ReactiveSpan.noop(), Logger.noop());
+                .decode(ObjectMappers.JSON_MAPPER, payload.getTopic(), payload.getPayload(), Logger.noop());
         assertEquals(msg.toJson(), eventMessage.toJson());
     }
 }

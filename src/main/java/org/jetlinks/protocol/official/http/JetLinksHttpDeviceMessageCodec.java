@@ -12,7 +12,6 @@ import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DisconnectDeviceMessage;
 import org.jetlinks.core.message.MessageType;
 import org.jetlinks.core.message.codec.DefaultTransport;
-import org.jetlinks.core.message.codec.EncodedMessage;
 import org.jetlinks.core.message.codec.Transport;
 import org.jetlinks.core.message.codec.http.Header;
 import org.jetlinks.core.message.codec.http.HttpExchangeMessage;
@@ -85,48 +84,17 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
     @Override
     protected void downstream(BlockingMessageEncodeContext context) {
-        String deviceId = context.getMessage().getDeviceId();
-        JSONObject json = context.getMessage().toJson();
         if (context.getMessage() instanceof DisconnectDeviceMessage) {
-            tracer(deviceId)
-                    .traceBlocking(DeviceTracer.OperationName.encode, span -> {
-                        span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                        span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
-                        span.setAttribute(DeviceTracer.SpanKey.input, json.toJSONString());
-                        span.setAttribute(DeviceTracer.SpanKey.tag, "平台主动断开连接");
-                        context.disconnect();
-                        return null;
-                    });
             return;
         }
 
-        EncodedMessage encodedMessage = tracer(deviceId)
-                .traceBlocking(DeviceTracer.OperationName.encode, _span -> {
-                    // 设备ID
-                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                    // 详细信息
-                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
-
-                    if (logger(deviceId).isTraceEnabled()) {
-                        logger(deviceId).debug(
-                            "使用TEXT数据类型，下发json报文：{}", json.toJSONString()
-                        );
-                    }
-
-                    DefaultWebSocketMessage msg = DefaultWebSocketMessage.of(
-                            WebSocketMessage.Type.TEXT,
-                            Unpooled.wrappedBuffer(json.toJSONString().getBytes()));
-                    TopicMessageCodec codec = TopicMessageCodec.lookup(context.getMessage().getClass());
-                    if (codec != null) {
-                        _span.setAttribute(DeviceTracer.SpanKey.tag, codec.getRoute().getGroup());
-                    }
-                    //  输出报文
-                    _span.setAttribute(DeviceTracer.SpanKey.output, msg.payloadAsString());
-                    return msg;
-                });
-
+        JSONObject json = context.getMessage().toJson();
         //转为json 发送给设备
-        context.sendToDeviceLater(encodedMessage);
+        context.sendToDeviceLater(
+            DefaultWebSocketMessage.of(
+                WebSocketMessage.Type.TEXT,
+                Unpooled.wrappedBuffer(json.toJSONString().getBytes()))
+        );
 
     }
 
@@ -152,26 +120,9 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
     private void decodeWebsocket(BlockingMessageDecodeContext context) {
         WebSocketSessionMessage msg = ((WebSocketSessionMessage) context.getData());
 
-        DeviceMessage message = tracer()
-                .traceBlocking(DeviceTracer.OperationName.decode, _span -> {
-                    DeviceMessage _msg = (DeviceMessage) MessageType
-                            .convertMessage(msg.payloadAsJson())
-                            .orElse(null);
-                    // 原始报文
-                    _span.setAttribute(DeviceTracer.SpanKey.input, msg.payloadAsString());
-                    // 详细信息
-                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
-
-                    if (_msg != null) {
-                        // 设备ID
-                        _span.setAttribute(DeviceTracer.SpanKey.deviceId, _msg.getDeviceId());
-                        // 输出报文
-                        _span.setAttribute(DeviceTracer.SpanKey.output, _msg.toJson().toString());
-                    } else {
-                        logger().warn("输出消息为空");
-                    }
-                    return _msg;
-                });
+        DeviceMessage message = (DeviceMessage) MessageType
+            .convertMessage(msg.payloadAsJson())
+            .orElse(null);
 
         context.sendToPlatformLater(message);
 
@@ -204,9 +155,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
         }
         String basicToken = token[1];
         // 移除产品前缀
-        if (logger().isDebugEnabled()) {
-            logger().debug("移除uri中的产品前缀。原始值：{}", exchange.getPath());
-        }
+        logger().debug("移除uri中的产品前缀。原始值：{}", exchange.getPath());
         String[] paths = TopicMessageCodec.removeProductPath(exchange.getPath());
         if (paths.length < 1) {
             logger().warn("path解析错误，path为空");
@@ -253,33 +202,10 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
             context.async(
                 exchange
                     .payload()
-                    .mapNotNull(payload -> tracer(deviceId)
-                            .traceBlocking(DeviceTracer.OperationName.decode, _span -> {
-                                String input = ByteBufUtil.hexDump(payload);
-                                if (logger(deviceId).isDebugEnabled()) {
-                                    logger(deviceId).debug(
-                                            "请求原始报文：{}", ByteBufUtil.hexDump(payload)
-                                    );
-                                }
-                                // 原始报文
-                                _span.setAttribute(DeviceTracer.SpanKey.input, input);
-                                // 设备ID
-                                _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                                // 详细信息
-                                _span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
-
-                                byte[] bytes = ByteBufUtil.getBytes(payload);
-                                DeviceMessage msg = TopicMessageCodec.decode(
-                                        ObjectMappers.JSON_MAPPER, paths, bytes, _span, logger(deviceId)
-                                );
-                                if (msg != null) {
-                                    // 输出报文
-                                    _span.setAttribute(DeviceTracer.SpanKey.output, msg.toJson().toString());
-                                } else {
-                                    logger(deviceId).warn("输出消息为空");
-                                }
-                                return msg;
-                            }))
+                    .mapNotNull(payload -> {
+                        byte[] bytes = ByteBufUtil.getBytes(payload);
+                        return TopicMessageCodec.decode(ObjectMappers.JSON_MAPPER, paths, bytes, logger(deviceId));
+                    })
                     .flatMap(context::sendToPlatformReactive)
                     .as(MonoTracer.create(
                         DeviceTracer.SpanName.decode0(deviceId),

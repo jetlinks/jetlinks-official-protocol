@@ -2,18 +2,16 @@ package org.jetlinks.protocol.official.mqtt;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.Unpooled;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.digest.DigestUtils;
-import org.jetlinks.core.Value;
 import org.jetlinks.core.defaults.Authenticator;
 import org.jetlinks.core.device.*;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DisconnectDeviceMessage;
-import org.jetlinks.core.message.codec.*;
+import org.jetlinks.core.message.codec.DefaultTransport;
+import org.jetlinks.core.message.codec.MqttMessage;
+import org.jetlinks.core.message.codec.SimpleMqttMessage;
+import org.jetlinks.core.message.codec.Transport;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.DeviceConfigScope;
-import org.jetlinks.core.metadata.types.EnumType;
-import org.jetlinks.core.metadata.types.PasswordType;
 import org.jetlinks.core.metadata.types.StringType;
 import org.jetlinks.core.principal.CredentialType;
 import org.jetlinks.core.principal.Identity;
@@ -21,17 +19,18 @@ import org.jetlinks.core.principal.PasswordCredential;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.core.trace.DeviceTracer;
 import org.jetlinks.core.utils.TopicUtils;
-import org.jetlinks.protocol.official.*;
+import org.jetlinks.protocol.official.FunctionalTopicHandlers;
+import org.jetlinks.protocol.official.ObjectMappers;
+import org.jetlinks.protocol.official.TopicMessageCodec;
+import org.jetlinks.protocol.official.TopicPayload;
 import org.jetlinks.supports.protocol.blocking.BlockingDeviceMessageCodec;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageDecodeContext;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageEncodeContext;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.Nonnull;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 
 /**
  * <pre>
@@ -103,53 +102,33 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
         }
 
         String deviceId = topics[1];
-        if (logger(deviceId).isDebugEnabled()) {
-            logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
+        logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
+        // 解码消息
+        DeviceMessage msg = TopicMessageCodec
+                .decode(mapper, TopicMessageCodec.removeProductPath(topic), payload, logger(deviceId));
+
+        // 非平台消息,如 同步时间等topic.
+        if (msg == null) {
+            logger(deviceId).warn("TopicMessageCodec解析结果为空，尝试作为功能性topic解析");
+            msg = FunctionalTopicHandlers
+                .handle(
+                    context.getDevice(),
+                    TopicUtils.split(topic),
+                    payload,
+                    mapper,
+                    reply -> context
+                        .sendToDeviceLater(
+                            SimpleMqttMessage
+                                .builder()
+                                .topic(reply.getTopic())
+                                .payload(Unpooled.wrappedBuffer(reply.getPayload()))
+                                .qosLevel(1)
+                                .build()
+                        ));
         }
-        DeviceMessage msg = tracer(deviceId)
-                .traceBlocking(DeviceTracer.OperationName.decode, _span -> {
-                    // 原始报文
-                    _span.setAttribute(DeviceTracer.SpanKey.input, new String(payload, StandardCharsets.UTF_8));
-                    // 设备ID
-                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                    // 详细信息
-                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据上报");
-
-                    DeviceMessage _msg = TopicMessageCodec.decode(mapper, topics, payload, _span, logger(deviceId));
-
-                    // 非平台消息,如 同步时间等topic.
-                    if (_msg == null) {
-                        logger(deviceId).warn("TopicMessageCodec解析结果为空，尝试作为功能性topic解析");
-                        _msg = FunctionalTopicHandlers
-                                .handle(
-                                        context.getDevice(),
-                                        TopicUtils.split(topic),
-                                        payload,
-                                        mapper,
-                                        reply -> context
-                                                .sendToDeviceLater(
-                                                        SimpleMqttMessage
-                                                                .builder()
-                                                                .topic(reply.getTopic())
-                                                                .payload(Unpooled.wrappedBuffer(reply.getPayload()))
-                                                                .qosLevel(1)
-                                                                .build()
-                                                ));
-                    }
-
-                    if (_msg != null) {
-                        // 输出报文
-                        _span.setAttribute(DeviceTracer.SpanKey.output, _msg.toJson().toString());
-                    }
-                    return _msg;
-                });
-
         //发送给平台
         if (msg != null) {
-            logger(deviceId).info("解码完成, 消息内容：{}", msg.toJson());
             context.sendToPlatformLater(msg);
-        } else {
-            logger(deviceId).warn("解码结果消息为空");
         }
     }
 
@@ -159,58 +138,28 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
         String deviceId = deviceMessage.getDeviceId();
         //直接断开连接
         if (deviceMessage instanceof DisconnectDeviceMessage) {
-            tracer(deviceId)
-                    .traceBlocking(DeviceTracer.OperationName.encode, span -> {
-                        span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                        span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
-                        span.setAttribute(DeviceTracer.SpanKey.input, deviceMessage.toJson().toJSONString());
-                        span.setAttribute(DeviceTracer.SpanKey.tag, "平台主动断开连接");
-                        context.disconnect();
-                        return null;
-                    });
+            context.disconnect();
             return;
         }
 
-        TopicPayload convertResult = tracer(deviceId)
-                .traceBlocking(DeviceTracer.OperationName.encode, _span -> {
-                    // 原始消息
-                    _span.setAttribute(DeviceTracer.SpanKey.input, deviceMessage.toJson().toString());
-                    // 设备ID
-                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                    // 详细信息
-                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
-                    return TopicMessageCodec.encode(mapper, deviceMessage, _span, logger(deviceId));
-                });
+        TopicPayload convertResult = TopicMessageCodec.encode(mapper, deviceMessage, logger(deviceId));
 
-        EncodedMessage encodedMessage = tracer(deviceId)
-                .traceBlocking(DeviceTracer.OperationName.encode, _span -> {
-                    // 设备ID
-                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                    // 详细信息
-                    _span.setAttribute(DeviceTracer.SpanKey.message, "数据下发");
+        //获取产品ID
+        String productId = deviceMessage
+            .getHeader("productId")
+            .map(String::valueOf)
+            .orElseGet(() -> context.getDevice().getSelfConfigNow(DeviceConfigKey.productId));
+        logger(deviceId).debug("从消息header或设备缓存中获取产品ID：{}", productId);
 
-                    //获取产品ID
-                    String productId = deviceMessage
-                            .getHeader("productId")
-                            .map(String::valueOf)
-                            .orElseGet(() -> context.getDevice().getSelfConfigNow(DeviceConfigKey.productId));
-                    if (logger(deviceId).isDebugEnabled()) {
-                        logger(deviceId).debug("从消息header或设备缓存中获取产品ID：{}", productId);
-                    }
-
-                    EncodedMessage msg = SimpleMqttMessage
-                            .builder()
-                            //  /{产品ID} + 原始SQL
-                            .topic("/".concat(productId).concat(convertResult.getTopic()))
-                            .payload(Unpooled.wrappedBuffer(convertResult.getPayload()))
-                            .qosLevel(1)
-                            .build();
-                    //  输出报文
-                    _span.setAttribute(DeviceTracer.SpanKey.output, msg.payloadAsString());
-                    return msg;
-                });
-
-        context.sendToDeviceLater(encodedMessage);
+        context.sendToDeviceLater(
+            SimpleMqttMessage
+                .builder()
+                //  /{产品ID} + 原始SQL
+                .topic("/".concat(productId).concat(convertResult.getTopic()))
+                .payload(Unpooled.wrappedBuffer(convertResult.getPayload()))
+                .qosLevel(1)
+                .build()
+        );
 
     }
 
@@ -230,11 +179,10 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
                 .defer(() -> {
                     if (request instanceof MqttAuthenticationRequest) {
                         MqttAuthenticationRequest mqtt = ((MqttAuthenticationRequest) request);
-                        if (logger(deviceOperation.getDeviceId()).isDebugEnabled()) {
-                            logger(deviceOperation.getDeviceId()).debug(
-                                    "开始获取设备凭证，clientId：{}", mqtt.getClientId()
-                            );
-                        }
+                        logger(deviceOperation.getDeviceId()).debug(
+                                "开始获取设备凭证，clientId：{}", mqtt.getClientId()
+                        );
+
                         return deviceOperation
                                 // 获取设备凭证
                                 .getCredential(
@@ -243,12 +191,10 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
                                 )
                                 .map(cert -> {
                                     if (cert.isWrapperFor(PasswordCredential.class)) {
-                                        if (logger(deviceOperation.getDeviceId()).isDebugEnabled()) {
-                                            logger(deviceOperation.getDeviceId()).debug(
-                                                    "校验用户名密码。username：{}，password：{}",
-                                                    mqtt.getUsername(), mqtt.getPassword()
-                                            );
-                                        }
+                                        logger(deviceOperation.getDeviceId()).debug(
+                                                "校验用户名密码。username：{}，password：{}",
+                                                mqtt.getUsername(), mqtt.getPassword()
+                                        );
 
                                         PasswordCredential unwrap = cert.unwrap(PasswordCredential.class);
                                         // 简单比对.
