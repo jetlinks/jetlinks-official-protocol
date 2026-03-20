@@ -93,28 +93,13 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
             String deviceId = message.getDeviceId();
 
             // 使用平台的身份认进行认证
-            BlockingDevicePrincipal principal = tracer(deviceId)
-                    .traceBlocking(DeviceTracer.OperationName.auth, _span -> {
-                        _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
-                        _span.setAttribute(DeviceTracer.SpanKey.message, "设备身份token认证");
-                        _span.setAttribute(DeviceTracer.SpanKey.tag, "TCP直连");
-
-                        logger(deviceId).debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
-                        BlockingDevicePrincipal _principal = context.resolveDevice(
-                            Principal.create(
-                                Identity.create(identityType, deviceId),
-                                TokenCredential.create(token)
-                            )
-                        );
-                        
-                        if (_principal != null && _principal.isVerified()) {
-                            _span.setAttribute(DeviceTracer.SpanKey.output, "认证成功");
-                        } else {
-                            _span.setAttribute(DeviceTracer.SpanKey.output, "认证失败");
-                        }
-                        
-                        return _principal;
-                    });
+            logger(deviceId).debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
+            BlockingDevicePrincipal principal = context.resolveDevice(
+                Principal.create(
+                    Identity.create(identityType, deviceId),
+                    TokenCredential.create(token)
+                )
+            );
 
             if (principal == null) {
                 logger(deviceId).warn("设备不存在或未激活");
