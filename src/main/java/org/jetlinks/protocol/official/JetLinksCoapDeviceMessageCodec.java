@@ -14,6 +14,7 @@ import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.DeviceConfigScope;
 import org.jetlinks.core.metadata.types.EnumType;
 import org.jetlinks.core.metadata.types.PasswordType;
+import org.jetlinks.core.monitor.logger.Logger;
 import org.jetlinks.core.spi.EmptyServiceContext;
 import org.jetlinks.core.spi.ServiceContext;
 import org.jetlinks.core.trace.DeviceTracer;
@@ -47,7 +48,8 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
         String path = getPath(message);
         String deviceId = getDeviceId(message);
 
-        logger(deviceId).debug("收到设备CoAP报文，path: {}, deviceId: {}", path, deviceId);
+        Logger deviceLogger =  logger(deviceId);
+        deviceLogger.debug("收到设备CoAP报文，path: {}, deviceId: {}", path, deviceId);
         
         // content type
         boolean cbor = message
@@ -63,7 +65,7 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
         BlockingDeviceOperator device = context.getDevice(deviceId);
 
         if (device == null) {
-            logger(deviceId).warn("设备不存在，deviceId: {}", deviceId);
+            deviceLogger.warn("设备不存在，deviceId: {}", deviceId);
             return null;
         }
 
@@ -84,7 +86,7 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
                     byte[] payload = ciphers.decrypt(message.payloadAsBytes(), secureKey);
 
                     DeviceMessage msg = TopicMessageCodec
-                        .decode(objectMapper, TopicMessageCodec.removeProductPath(path), payload, logger(deviceId));
+                        .decode(objectMapper, TopicMessageCodec.removeProductPath(path), payload, deviceLogger);
                     if (msg == null) {
                         msg = FunctionalTopicHandlers
                             .handle(device,
@@ -95,7 +97,7 @@ public class JetLinksCoapDeviceMessageCodec extends AbstractCoapDeviceMessageCod
                     }
                     
                     if (msg != null) {
-                        logger(deviceId).info("解码完成, 消息内容：{}", msg.toJson());
+                        deviceLogger.info("解码完成, 消息内容：{}", msg.toJson());
                     }
                     
                     return msg;

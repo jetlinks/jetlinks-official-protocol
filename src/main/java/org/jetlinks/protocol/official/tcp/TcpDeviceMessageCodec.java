@@ -60,11 +60,12 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
             handleLogin(payload, context);
         } else {
             String deviceId = device.getDeviceId();
-            logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
+            Logger deviceLogger = logger(deviceId);
+            deviceLogger.debug("获取设备ID，deviceId: {}", deviceId);
             DeviceMessage message = BinaryMessageType.read(payload, deviceId);
             //直接解码并发送给平台
             if (message != null) {
-                logger(deviceId).info("解码完成, 消息内容：{}", message.toJson());
+                deviceLogger.info("解码完成, 消息内容：{}", message.toJson());
                 context.sendToPlatformLater(message);
             }
         }
@@ -91,9 +92,9 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
                 .orElse(null);
 
             String deviceId = message.getDeviceId();
-
+            Logger deviceLogger = logger(deviceId);
             // 使用平台的身份认进行认证
-            logger(deviceId).debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
+            deviceLogger.debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
             BlockingDevicePrincipal principal = context.resolveDevice(
                 Principal.create(
                     Identity.create(identityType, deviceId),
@@ -102,7 +103,7 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
             );
 
             if (principal == null) {
-                logger(deviceId).warn("设备不存在或未激活");
+                deviceLogger.warn("设备不存在或未激活");
                 ack(message, AckCode.noAuth, context);
                 return;
             }

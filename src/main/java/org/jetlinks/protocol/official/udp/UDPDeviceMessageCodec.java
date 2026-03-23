@@ -11,6 +11,7 @@ import org.jetlinks.core.message.*;
 import org.jetlinks.core.message.codec.*;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
+import org.jetlinks.core.monitor.logger.Logger;
 import org.jetlinks.core.principal.Identity;
 import org.jetlinks.core.principal.Principal;
 import org.jetlinks.core.principal.TokenCredential;
@@ -57,7 +58,8 @@ public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
         // 接下来是消息
         DeviceMessage message = BinaryMessageType.read(payload);
         String deviceId = message.getDeviceId();
-        logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
+        Logger deviceLogger = logger(deviceId);
+        deviceLogger.debug("获取设备ID，deviceId: {}", deviceId);
 
         // 走平台的身份认证
         BlockingDevicePrincipal principal = tracer(deviceId)
@@ -66,8 +68,8 @@ public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
                     _span.setAttribute(DeviceTracer.SpanKey.message, "设备身份token认证");
                     _span.setAttribute(DeviceTracer.SpanKey.tag, "UDP直连");
 
-                    if (logger(deviceId).isDebugEnabled()) {
-                        logger(deviceId).debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
+                    if (deviceLogger.isDebugEnabled()) {
+                        deviceLogger.debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
                     }
 
                     BlockingDevicePrincipal _principal = context.resolveDevice(
@@ -87,12 +89,12 @@ public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
                 });
 
         if (principal == null || !principal.isVerified()) {
-            logger(deviceId).warn("设备认证失败");
+            deviceLogger.warn("设备认证失败");
             ack(message, AckCode.noAuth, context);
             return;
         }
 
-        logger(deviceId).info("解码完成, 消息内容：{}", message.toJson());
+        deviceLogger.info("解码完成, 消息内容：{}", message.toJson());
         context.sendToPlatformLater(message);
         ack(message, AckCode.ok, context);
     }

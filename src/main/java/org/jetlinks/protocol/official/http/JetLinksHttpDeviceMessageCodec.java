@@ -21,6 +21,7 @@ import org.jetlinks.core.message.codec.http.websocket.WebSocketMessage;
 import org.jetlinks.core.message.codec.http.websocket.WebSocketSessionMessage;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
+import org.jetlinks.core.monitor.logger.Logger;
 import org.jetlinks.core.principal.CredentialType;
 import org.jetlinks.core.principal.Identity;
 import org.jetlinks.core.principal.Principal;
@@ -168,6 +169,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
         String deviceId = paths[1];
         BlockingDeviceOperator device = context.getDevice(deviceId);
+        Logger deviceLogger = logger(deviceId);
         // 设备不存在
         if (device == null) {
             logger().warn("设备不存在，id：{}", deviceId);
@@ -187,8 +189,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
         // token不正确
         if (principal == null || !principal.isVerified()) {
-            logger(deviceId)
-                .warn("token不匹配，device:{},token:{}", deviceId, basicToken);
+            deviceLogger.warn("token不匹配，device:{},token:{}", deviceId, basicToken);
             context.async(
                 exchange
                     .response(unauthorized("Token not match"))
@@ -204,7 +205,7 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
                     .payload()
                     .mapNotNull(payload -> {
                         byte[] bytes = ByteBufUtil.getBytes(payload);
-                        return TopicMessageCodec.decode(ObjectMappers.JSON_MAPPER, paths, bytes, logger(deviceId));
+                        return TopicMessageCodec.decode(ObjectMappers.JSON_MAPPER, paths, bytes, deviceLogger);
                     })
                     .flatMap(context::sendToPlatformReactive)
                     .as(MonoTracer.create(
@@ -257,9 +258,10 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
                    Map<String, String> params = req.getSocketSession().getQueryParameters();
                    String accessId = params.get("accessId");
                    String accessToken = params.get("accessToken");
-                   if (logger(device.getDeviceId()).isDebugEnabled()) {
-                       logger(device.getDeviceId()).info(
-                               "开始认证，请求参数：accessId：{}，accessToken：{}", accessId, accessToken
+                   Logger deviceLogger = logger(device.getDeviceId());
+                   if (deviceLogger.isDebugEnabled()) {
+                       deviceLogger.info(
+                               "开始认证，请求参数：accessId{}", accessId
                        );
                    }
 
@@ -274,8 +276,8 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
                            )
                            .map(credential -> {
                                String accessTokenCredential = credential.unwrap(TokenCredential.class).getAccessToken();
-                               if (logger(device.getDeviceId()).isDebugEnabled()) {
-                                   logger(device.getDeviceId()).debug(
+                               if (deviceLogger.isDebugEnabled()) {
+                                   deviceLogger.debug(
                                            "成功设备接入身份凭证信息，accessToken：{}", accessTokenCredential
                                    );
                                }
@@ -328,8 +330,9 @@ public class JetLinksHttpDeviceMessageCodec extends BlockingDeviceMessageCodec i
                                         .credential()
                                         .unwrap(TokenCredential.class)
                                         .getAccessToken();
-                                if (logger(deviceId).isDebugEnabled()) {
-                                    logger(deviceId).debug(
+                                Logger deviceLogger = logger(deviceId);
+                                if (deviceLogger.isDebugEnabled()) {
+                                    deviceLogger.debug(
                                             "成功设备接入身份凭证信息，deviceId：{}，accessToken：{}", deviceId, accessTokenCredential
                                     );
                                 }

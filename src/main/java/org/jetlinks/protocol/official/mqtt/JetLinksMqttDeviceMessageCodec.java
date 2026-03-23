@@ -13,6 +13,7 @@ import org.jetlinks.core.message.codec.Transport;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.DeviceConfigScope;
 import org.jetlinks.core.metadata.types.StringType;
+import org.jetlinks.core.monitor.logger.Logger;
 import org.jetlinks.core.principal.CredentialType;
 import org.jetlinks.core.principal.Identity;
 import org.jetlinks.core.principal.PasswordCredential;
@@ -97,19 +98,17 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
         byte[] payload = context.getData().payloadAsBytes();
 
         String[] topics = TopicMessageCodec.removeProductPath(topic);
-        if (logger().isDebugEnabled()) {
-            logger().debug("去除topic中的产品ID，原始topic：{}，输出topic：{}", topic, String.join("/", topics));
-        }
 
         String deviceId = topics[1];
-        logger(deviceId).debug("获取设备ID，deviceId: {}", deviceId);
+        Logger deviceLogger = logger(deviceId);
+        deviceLogger.debug("获取设备ID，deviceId: {}", deviceId);
         // 解码消息
         DeviceMessage msg = TopicMessageCodec
-                .decode(mapper, TopicMessageCodec.removeProductPath(topic), payload, logger(deviceId));
+                .decode(mapper, TopicMessageCodec.removeProductPath(topic), payload, deviceLogger);
 
         // 非平台消息,如 同步时间等topic.
         if (msg == null) {
-            logger(deviceId).warn("TopicMessageCodec解析结果为空，尝试作为功能性topic解析");
+            deviceLogger.debug("TopicMessageCodec解析结果为空，尝试作为功能性topic解析");
             msg = FunctionalTopicHandlers
                 .handle(
                     context.getDevice(),
@@ -142,14 +141,15 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
             return;
         }
 
-        TopicPayload convertResult = TopicMessageCodec.encode(mapper, deviceMessage, logger(deviceId));
+        Logger deviceLogger = logger(deviceId);
+        TopicPayload convertResult = TopicMessageCodec.encode(mapper, deviceMessage, deviceLogger);
 
         //获取产品ID
         String productId = deviceMessage
             .getHeader("productId")
             .map(String::valueOf)
             .orElseGet(() -> context.getDevice().getSelfConfigNow(DeviceConfigKey.productId));
-        logger(deviceId).debug("从消息header或设备缓存中获取产品ID：{}", productId);
+        deviceLogger.debug("从消息header或设备缓存中获取产品ID：{}", productId);
 
         context.sendToDeviceLater(
             SimpleMqttMessage
@@ -179,7 +179,8 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
                 .defer(() -> {
                     if (request instanceof MqttAuthenticationRequest) {
                         MqttAuthenticationRequest mqtt = ((MqttAuthenticationRequest) request);
-                        logger(deviceOperation.getDeviceId()).debug(
+                        Logger deviceLogger = logger(deviceOperation.getDeviceId());
+                        deviceLogger.debug(
                                 "开始获取设备凭证，clientId：{}", mqtt.getClientId()
                         );
 
@@ -191,7 +192,7 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
                                 )
                                 .map(cert -> {
                                     if (cert.isWrapperFor(PasswordCredential.class)) {
-                                        logger(deviceOperation.getDeviceId()).debug(
+                                        deviceLogger.debug(
                                                 "校验用户名密码。username：{}，password：{}",
                                                 mqtt.getUsername(), mqtt.getPassword()
                                         );
