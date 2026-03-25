@@ -108,7 +108,6 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
         // 非平台消息,如 同步时间等topic.
         if (msg == null) {
-            deviceLogger.debug("TopicMessageCodec解析结果为空，尝试作为功能性topic解析");
             msg = FunctionalTopicHandlers
                 .handle(
                     context.getDevice(),
@@ -149,7 +148,6 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
             .getHeader("productId")
             .map(String::valueOf)
             .orElseGet(() -> context.getDevice().getSelfConfigNow(DeviceConfigKey.productId));
-        deviceLogger.debug("从消息header或设备缓存中获取产品ID：{}", productId);
 
         context.sendToDeviceLater(
             SimpleMqttMessage
