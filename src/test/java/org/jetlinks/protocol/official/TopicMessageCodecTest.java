@@ -5,7 +5,9 @@ import org.jetlinks.core.message.ChildDeviceMessage;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.event.EventMessage;
 import org.jetlinks.core.message.property.ReportPropertyMessage;
+import org.jetlinks.core.monitor.logger.Logger;
 import org.jetlinks.core.route.Route;
+import org.jetlinks.core.trace.ReactiveSpan;
 import org.junit.Test;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -24,13 +26,13 @@ public class TopicMessageCodecTest {
         message.setTimestamp(msg.getTimestamp());
 
 
-        TopicPayload payload = TopicMessageCodec.child.doEncode(objectMapper, message);
+        TopicPayload payload = TopicMessageCodec.child.doEncode(objectMapper, message, Logger.noop());
         System.out.println(payload.getPayload().length);
         assertEquals("/test/child/childId/properties/report", payload.getTopic());
 
         Mono.justOrEmpty(
                 TopicMessageCodec
-                    .decode(objectMapper, payload.getTopic(), payload.getPayload())
+                    .decode(objectMapper, payload.getTopic(), payload.getPayload(), Logger.noop())
             )
                 .as(StepVerifier::create)
                 .expectNextMatches(deviceMessage -> {
@@ -64,12 +66,12 @@ public class TopicMessageCodecTest {
         eventMessage.setDeviceId("test-device");
         eventMessage.setData("123");
 
-        TopicPayload payload = TopicMessageCodec.encode(ObjectMappers.JSON_MAPPER, eventMessage);
+        TopicPayload payload = TopicMessageCodec.encode(ObjectMappers.JSON_MAPPER, eventMessage, Logger.noop());
         assertEquals(payload.getTopic(), "/test-device/event/test");
 
 
         DeviceMessage msg = TopicMessageCodec
-                .decode(ObjectMappers.JSON_MAPPER, payload.getTopic(), payload.getPayload());
+                .decode(ObjectMappers.JSON_MAPPER, payload.getTopic(), payload.getPayload(), Logger.noop());
         assertEquals(msg.toJson(), eventMessage.toJson());
     }
 }

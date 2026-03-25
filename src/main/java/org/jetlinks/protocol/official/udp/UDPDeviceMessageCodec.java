@@ -1,6 +1,7 @@
 package org.jetlinks.protocol.official.udp;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import lombok.NonNull;
 import org.jetlinks.core.config.ConfigKey;
@@ -10,11 +11,14 @@ import org.jetlinks.core.message.*;
 import org.jetlinks.core.message.codec.*;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.types.PasswordType;
+import org.jetlinks.core.monitor.logger.Logger;
 import org.jetlinks.core.principal.Identity;
 import org.jetlinks.core.principal.Principal;
 import org.jetlinks.core.principal.TokenCredential;
 import org.jetlinks.core.spi.ServiceContext;
+import org.jetlinks.core.trace.DeviceTracer;
 import org.jetlinks.protocol.official.binary.*;
+import org.jetlinks.protocol.official.TopicMessageCodec;
 import org.jetlinks.supports.protocol.blocking.BlockingDeviceMessageCodec;
 import org.jetlinks.supports.protocol.blocking.BlockingDevicePrincipal;
 import org.jetlinks.supports.protocol.blocking.BlockingMessageDecodeContext;
@@ -44,25 +48,53 @@ public class UDPDeviceMessageCodec extends BlockingDeviceMessageCodec {
     protected void upstream(BlockingMessageDecodeContext context) {
         ByteBuf payload = context.getData().getPayload();
 
+        if (logger().isDebugEnabled()) {
+            logger().debug("收到设备UDP报文: {}", ByteBufUtil.hexDump(payload));
+        }
+
         // 前面是token
         String token = (String) DataType.STRING.read(payload);
 
         // 接下来是消息
         DeviceMessage message = BinaryMessageType.read(payload);
+        String deviceId = message.getDeviceId();
+        Logger deviceLogger = logger(deviceId);
+        deviceLogger.debug("获取设备ID，deviceId: {}", deviceId);
 
         // 走平台的身份认证
-        BlockingDevicePrincipal principal = context.resolveDevice(
-            Principal.create(
-                Identity.create(identityType, message.getDeviceId()),
-                TokenCredential.create(token)
-            )
-        );
+        BlockingDevicePrincipal principal = tracer(deviceId)
+                .traceBlocking(DeviceTracer.OperationName.auth, _span -> {
+                    _span.setAttribute(DeviceTracer.SpanKey.deviceId, deviceId);
+                    _span.setAttribute(DeviceTracer.SpanKey.message, "设备身份token认证");
+                    _span.setAttribute(DeviceTracer.SpanKey.tag, "UDP直连");
+
+                    if (deviceLogger.isDebugEnabled()) {
+                        deviceLogger.debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
+                    }
+
+                    BlockingDevicePrincipal _principal = context.resolveDevice(
+                        Principal.create(
+                            Identity.create(identityType, deviceId),
+                            TokenCredential.create(token)
+                        )
+                    );
+
+                    if (_principal != null && _principal.isVerified()) {
+                        _span.setAttribute(DeviceTracer.SpanKey.output, "认证成功");
+                    } else {
+                        _span.setAttribute(DeviceTracer.SpanKey.output, "认证失败");
+                    }
+
+                    return _principal;
+                });
 
         if (principal == null || !principal.isVerified()) {
+            deviceLogger.warn("设备认证失败");
             ack(message, AckCode.noAuth, context);
             return;
         }
 
+        deviceLogger.info("解码完成, 消息内容：{}", message.toJson());
         context.sendToPlatformLater(message);
         ack(message, AckCode.ok, context);
     }

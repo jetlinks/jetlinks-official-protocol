@@ -12,7 +12,10 @@ import org.jetlinks.core.message.function.FunctionInvokeMessageReply;
 import org.jetlinks.core.message.property.*;
 import org.jetlinks.core.message.state.DeviceStateCheckMessage;
 import org.jetlinks.core.message.state.DeviceStateCheckMessageReply;
+import org.jetlinks.core.monitor.logger.Logger;
 import org.jetlinks.core.route.MqttRoute;
+import org.jetlinks.core.trace.DeviceTracer;
+import org.jetlinks.core.trace.ReactiveSpan;
 import org.jetlinks.core.utils.TopicUtils;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
@@ -85,10 +88,12 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+        DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
             String event = topic[topic.length - 1];
-
-            EventMessage message = (EventMessage) super.doDecode(mapper, topic, payload);
+            if (logger.isDebugEnabled()) {
+                logger.debug("获取事件ID：{}", event);
+            }
+            EventMessage message = (EventMessage) super.doDecode(mapper, topic, payload, logger);
             message.setEvent(event);
             return message;
         }
@@ -137,10 +142,13 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
             String[] _topic = Arrays.copyOfRange(topic, 2, topic.length);
             _topic[0] = "";// topic以/开头所有第一位是空白
-            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload);
+            if (logger.isDebugEnabled()) {
+                logger.debug("子设备消息topic：{}", String.join("/", _topic));
+            }
+            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload, logger);
             if (childMsg != null) {
                 ChildDeviceMessage msg = new ChildDeviceMessage();
                 msg.setDeviceId(topic[1]);
@@ -153,13 +161,16 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        protected TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message) {
+        protected TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message, Logger logger) {
             ChildDeviceMessage deviceMessage = ((ChildDeviceMessage) message);
 
             DeviceMessage childMessage = ((DeviceMessage) deviceMessage.getChildDeviceMessage());
 
-            TopicPayload payload = TopicMessageCodec.encode(mapper, childMessage);
+            TopicPayload payload = TopicMessageCodec.encode(mapper, childMessage, logger);
             String[] childTopic = payload.getTopic().split("/");
+            if (logger.isDebugEnabled()) {
+                logger.debug("子设备消息topic：{}", String.join("/", childTopic));
+            }
             String[] topic = new String[topics.length + childTopic.length - 3];
             //合并topic
             System.arraycopy(topics, 0, topic, 0, topics.length - 1);
@@ -167,6 +178,9 @@ public enum TopicMessageCodec {
 
             refactorTopic(topic, message);
             payload.setTopic(String.join("/", topic));
+            if (logger.isDebugEnabled()) {
+                logger.info("合并topic：{}", payload.getTopic());
+            }
             return payload;
 
         }
@@ -185,10 +199,14 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+        public DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
             String[] _topic = Arrays.copyOfRange(topic, 2, topic.length);
             _topic[0] = "";// topic以/开头所有第一位是空白
-            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload);
+            if (logger.isDebugEnabled()) {
+                logger.debug("子设备消息topic：{}", String.join("/", _topic));
+            }
+
+            DeviceMessage childMsg = TopicMessageCodec.decode(mapper, _topic, payload, logger);
             if (childMsg != null) {
                 ChildDeviceMessageReply msg = new ChildDeviceMessageReply();
                 msg.setDeviceId(topic[1]);
@@ -202,13 +220,16 @@ public enum TopicMessageCodec {
         }
 
         @Override
-        protected TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message) {
+        protected TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message, Logger logger) {
             ChildDeviceMessageReply deviceMessage = ((ChildDeviceMessageReply) message);
 
             DeviceMessage childMessage = ((DeviceMessage) deviceMessage.getChildDeviceMessage());
 
-            TopicPayload payload = TopicMessageCodec.encode(mapper, childMessage);
+            TopicPayload payload = TopicMessageCodec.encode(mapper, childMessage, logger);
             String[] childTopic = payload.getTopic().split("/");
+            if (logger.isDebugEnabled()) {
+                logger.debug("子设备topic：", String.join("/", childTopic));
+            }
             String[] topic = new String[topics.length + childTopic.length - 3];
             //合并topic
             System.arraycopy(topics, 0, topic, 0, topics.length - 1);
@@ -216,6 +237,9 @@ public enum TopicMessageCodec {
 
             refactorTopic(topic, message);
             payload.setTopic(String.join("/", topic));
+            if (logger.isDebugEnabled()) {
+                logger.info("合并topic：{}", payload.getTopic());
+            }
             return payload;
 
         }
@@ -253,7 +277,7 @@ public enum TopicMessageCodec {
     //透传设备消息
     direct("/*/direct", DirectDeviceMessage.class) {
         @Override
-        public DirectDeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+        public DirectDeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
             DirectDeviceMessage message = new DirectDeviceMessage();
             message.setDeviceId(topic[1]);
             message.setPayload(payload);
@@ -353,25 +377,27 @@ public enum TopicMessageCodec {
         return route;
     }
 
-    public static DeviceMessage decode(ObjectMapper mapper, String[] topics, byte[] payload) {
+    public static DeviceMessage decode(ObjectMapper mapper, String[] topics, byte[] payload, Logger logger) {
         TopicMessageCodec codec = fromTopic(topics).orElse(null);
-
         if (codec != null) {
-            return codec.doDecode(mapper, topics, payload);
+            if (logger.isDebugEnabled()) {
+                logger.debug("根据topic匹配到消息类型，{}/{}", codec.name(), codec.getRoute().getGroup());
+            }
+            return codec.doDecode(mapper, topics, payload, logger);
         }
-
+        logger.warn("无法匹配消息类型, topic: ", String.join("/", topics));
         return null;
     }
 
-    public static DeviceMessage decode(ObjectMapper mapper, String topic, byte[] payload) {
-        return decode(mapper, topic.split("/"), payload);
+    public static DeviceMessage decode(ObjectMapper mapper, String topic, byte[] payload,  Logger logger) {
+        return decode(mapper, topic.split("/"), payload, logger);
     }
 
-    public static TopicPayload encode(ObjectMapper mapper, DeviceMessage message) {
+    public static TopicPayload encode(ObjectMapper mapper, DeviceMessage message, Logger logger) {
 
-        return fromMessage(message)
+        return fromMessage(message, logger)
             .orElseThrow(() -> new UnsupportedOperationException("unsupported message:" + message.getMessageType()))
-            .doEncode(mapper, message);
+            .doEncode(mapper, message, logger);
     }
 
     static Optional<TopicMessageCodec> fromTopic(String[] topic) {
@@ -383,33 +409,45 @@ public enum TopicMessageCodec {
         return Optional.empty();
     }
 
-    static Optional<TopicMessageCodec> fromMessage(DeviceMessage message) {
+    static Optional<TopicMessageCodec> fromMessage(DeviceMessage message, Logger logger) {
         for (TopicMessageCodec value : values()) {
             if (value.type == message.getClass()) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("根据topic匹配到消息类型，{}/{}", value.name(), value.getRoute().getGroup());
+                }
                 return Optional.of(value);
             }
         }
+        logger.warn("无法匹配消息类型: {}", message.getMessageType().name());
         return Optional.empty();
     }
 
     @SneakyThrows
-    DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload) {
+    DeviceMessage doDecode(ObjectMapper mapper, String[] topic, byte[] payload, Logger logger) {
         DeviceMessage message = mapper.readValue(payload, type);
-        message.thingId("device",topic[1]);
+        if (logger.isDebugEnabled()) {
+            logger.debug("读取json内容：{}", message.toJson());
+        }
+
+        String deviceId = topic[1];
+        if (logger.isDebugEnabled()) {
+            logger.debug("添加设备ID到消息：{}", deviceId);
+        }
+        message.thingId("device", deviceId);
 
         return message;
     }
 
     @SneakyThrows
-    TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message) {
+    TopicPayload doEncode(ObjectMapper mapper, String[] topics, DeviceMessage message, Logger logger) {
         refactorTopic(topics, message);
         return TopicPayload.of(String.join("/", topics), mapper.writeValueAsBytes(message));
     }
 
     @SneakyThrows
-    TopicPayload doEncode(ObjectMapper mapper, DeviceMessage message) {
+    TopicPayload doEncode(ObjectMapper mapper, DeviceMessage message, Logger logger) {
         String[] topics = Arrays.copyOf(pattern, pattern.length);
-        return doEncode(mapper, topics, message);
+        return doEncode(mapper, topics, message, logger);
     }
 
     void refactorTopic(String[] topics, DeviceMessage message) {
@@ -430,6 +468,14 @@ public enum TopicMessageCodec {
         String[] topics = Arrays.copyOfRange(topicArr, 1, topicArr.length);
         topics[0] = "";
         return topics;
+    }
+
+    public static TopicMessageCodec lookup(Class<? extends DeviceMessage> type) {
+        return Arrays
+                .stream(values())
+                .filter(codec -> codec.type.equals(type))
+                .findAny()
+                .orElse(null);
     }
 
 }

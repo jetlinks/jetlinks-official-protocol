@@ -2,23 +2,23 @@ package org.jetlinks.protocol.official.mqtt;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.buffer.Unpooled;
-import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.codec.digest.DigestUtils;
-import org.jetlinks.core.Value;
 import org.jetlinks.core.defaults.Authenticator;
 import org.jetlinks.core.device.*;
 import org.jetlinks.core.message.DeviceMessage;
 import org.jetlinks.core.message.DisconnectDeviceMessage;
-import org.jetlinks.core.message.codec.*;
+import org.jetlinks.core.message.codec.DefaultTransport;
+import org.jetlinks.core.message.codec.MqttMessage;
+import org.jetlinks.core.message.codec.SimpleMqttMessage;
+import org.jetlinks.core.message.codec.Transport;
 import org.jetlinks.core.metadata.DefaultConfigMetadata;
 import org.jetlinks.core.metadata.DeviceConfigScope;
-import org.jetlinks.core.metadata.types.EnumType;
-import org.jetlinks.core.metadata.types.PasswordType;
 import org.jetlinks.core.metadata.types.StringType;
+import org.jetlinks.core.monitor.logger.Logger;
 import org.jetlinks.core.principal.CredentialType;
 import org.jetlinks.core.principal.Identity;
 import org.jetlinks.core.principal.PasswordCredential;
 import org.jetlinks.core.spi.ServiceContext;
+import org.jetlinks.core.trace.DeviceTracer;
 import org.jetlinks.core.utils.TopicUtils;
 import org.jetlinks.protocol.official.FunctionalTopicHandlers;
 import org.jetlinks.protocol.official.ObjectMappers;
@@ -32,7 +32,6 @@ import reactor.core.publisher.Mono;
 import javax.annotation.Nonnull;
 import java.util.Arrays;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 
 /**
  * <pre>
@@ -98,9 +97,14 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
         byte[] payload = context.getData().payloadAsBytes();
 
+        String[] topics = TopicMessageCodec.removeProductPath(topic);
+
+        String deviceId = topics[1];
+        Logger deviceLogger = logger(deviceId);
+        deviceLogger.debug("获取设备ID，deviceId: {}", deviceId);
         // 解码消息
         DeviceMessage msg = TopicMessageCodec
-            .decode(mapper, TopicMessageCodec.removeProductPath(topic), payload);
+                .decode(mapper, TopicMessageCodec.removeProductPath(topic), payload, deviceLogger);
 
         // 非平台消息,如 同步时间等topic.
         if (msg == null) {
@@ -129,14 +133,15 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
     @Override
     protected void downstream(BlockingMessageEncodeContext context) {
         DeviceMessage deviceMessage = context.getMessage();
-
+        String deviceId = deviceMessage.getDeviceId();
         //直接断开连接
         if (deviceMessage instanceof DisconnectDeviceMessage) {
             context.disconnect();
             return;
         }
 
-        TopicPayload convertResult = TopicMessageCodec.encode(mapper, deviceMessage);
+        Logger deviceLogger = logger(deviceId);
+        TopicPayload convertResult = TopicMessageCodec.encode(mapper, deviceMessage, deviceLogger);
 
         //获取产品ID
         String productId = deviceMessage
@@ -168,30 +173,50 @@ public class JetLinksMqttDeviceMessageCodec extends BlockingDeviceMessageCodec i
 
     @Override
     public Mono<AuthenticationResponse> authenticate(@Nonnull AuthenticationRequest request, @Nonnull DeviceOperator deviceOperation) {
-        if (request instanceof MqttAuthenticationRequest) {
-            MqttAuthenticationRequest mqtt = ((MqttAuthenticationRequest) request);
+        return Mono
+                .defer(() -> {
+                    if (request instanceof MqttAuthenticationRequest) {
+                        MqttAuthenticationRequest mqtt = ((MqttAuthenticationRequest) request);
+                        Logger deviceLogger = logger(deviceOperation.getDeviceId());
+                        deviceLogger.debug(
+                                "开始获取设备凭证，clientId：{}", mqtt.getClientId()
+                        );
 
-            return deviceOperation
-                // 获取设备凭证
-                .getCredential(
-                    Identity.create(DefaultTransport.MQTT.getId(), mqtt.getClientId()),
-                    CredentialType.password
-                )
-                .map(cert -> {
-                    if (cert.isWrapperFor(PasswordCredential.class)) {
-                        PasswordCredential unwrap = cert.unwrap(PasswordCredential.class);
-                        // 简单比对.
-                        if (Objects.equals(unwrap.getUsername(), mqtt.getUsername())
-                            && Arrays.equals(unwrap.getPassword(), mqtt.getPassword().toCharArray())) {
-                            return AuthenticationResponse.success(deviceOperation.getDeviceId());
-                        } else {
-                            return AuthenticationResponse.error(401, "用户名密码错误");
-                        }
+                        return deviceOperation
+                                // 获取设备凭证
+                                .getCredential(
+                                        Identity.create(DefaultTransport.MQTT.getId(), mqtt.getClientId()),
+                                        CredentialType.password
+                                )
+                                .map(cert -> {
+                                    if (cert.isWrapperFor(PasswordCredential.class)) {
+                                        deviceLogger.debug(
+                                                "校验用户名密码。username：{}，password：{}",
+                                                mqtt.getUsername(), mqtt.getPassword()
+                                        );
+
+                                        PasswordCredential unwrap = cert.unwrap(PasswordCredential.class);
+                                        // 简单比对.
+                                        if (Objects.equals(unwrap.getUsername(), mqtt.getUsername())
+                                                && Arrays.equals(unwrap.getPassword(), mqtt
+                                                .getPassword()
+                                                .toCharArray())) {
+                                            return AuthenticationResponse.success(deviceOperation.getDeviceId());
+                                        } else {
+                                            return AuthenticationResponse.error(401, "用户名密码错误");
+                                        }
+                                    }
+                                    return AuthenticationResponse.error(500, "身份配置错误");
+                                });
                     }
-                    return AuthenticationResponse.error(500, "身份配置错误");
-                });
-        }
-        return Mono.just(AuthenticationResponse.error(400, "不支持的授权类型:" + request));
+                    return Mono.just(AuthenticationResponse.error(400, "不支持的授权类型:" + request));
+                })
+                .as(tracer(deviceOperation.getDeviceId())
+                            .traceMono(DeviceTracer.OperationName.auth, (ctx, _span) -> {
+                                _span.setAttribute(DeviceTracer.SpanKey.message, "设备身份用户名密码认证");
+                                _span.setAttribute(DeviceTracer.SpanKey.tag, "MQTT直连");
+                            }));
+
     }
 
 }

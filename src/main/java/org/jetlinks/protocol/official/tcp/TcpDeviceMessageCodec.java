@@ -15,6 +15,8 @@ import org.jetlinks.core.principal.Identity;
 import org.jetlinks.core.principal.Principal;
 import org.jetlinks.core.principal.TokenCredential;
 import org.jetlinks.core.spi.ServiceContext;
+import org.jetlinks.core.trace.DeviceTracer;
+import org.jetlinks.protocol.official.TopicMessageCodec;
 import org.jetlinks.protocol.official.binary.AckCode;
 import org.jetlinks.protocol.official.binary.BinaryAcknowledgeDeviceMessage;
 import org.jetlinks.protocol.official.binary.BinaryDeviceOnlineMessage;
@@ -47,19 +49,25 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
         ByteBuf payload = context.getData().getPayload();
         //read index
         payload.readInt();
-        //使用内置的logger,便于平台收集和管理日志.
-        Logger logger = context.logger();
 
-        if (logger.isDebugEnabled()) {
-            logger.debug("收到设备TCP报文: {}", ByteBufUtil.hexDump(payload));
+        if (logger().isDebugEnabled()) {
+            logger().debug("收到设备TCP报文: {}", ByteBufUtil.hexDump(payload));
         }
 
         BlockingDeviceOperator device = context.getDevice();
         if (device == null) {
+            logger().debug("上下文的设备不存在，开始设备登录");
             handleLogin(payload, context);
         } else {
+            String deviceId = device.getDeviceId();
+            Logger deviceLogger = logger(deviceId);
+            deviceLogger.debug("获取设备ID，deviceId: {}", deviceId);
+            DeviceMessage message = BinaryMessageType.read(payload, deviceId);
             //直接解码并发送给平台
-            context.sendToPlatformLater(BinaryMessageType.read(payload, device.getDeviceId()));
+            if (message != null) {
+                deviceLogger.info("解码完成, 消息内容：{}", message.toJson());
+                context.sendToPlatformLater(message);
+            }
         }
 
     }
@@ -84,8 +92,9 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
                 .orElse(null);
 
             String deviceId = message.getDeviceId();
-
+            Logger deviceLogger = logger(deviceId);
             // 使用平台的身份认进行认证
+            deviceLogger.debug("开始获取设备凭证，deviceId：{}，token：{}", deviceId, token);
             BlockingDevicePrincipal principal = context.resolveDevice(
                 Principal.create(
                     Identity.create(identityType, deviceId),
@@ -94,7 +103,7 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
             );
 
             if (principal == null) {
-                logger(deviceId).warn("设备不存在或未激活");
+                deviceLogger.warn("设备不存在或未激活");
                 ack(message, AckCode.noAuth, context);
                 return;
             }
@@ -111,6 +120,7 @@ public class TcpDeviceMessageCodec extends BlockingDeviceMessageCodec {
             //应答未授权
             ack(message, AckCode.noAuth, context);
         } else {
+            logger().warn("设备未授权");
             //应答未授权
             ack(message, AckCode.noAuth, context);
         }
