@@ -23,6 +23,47 @@ import java.util.stream.Stream;
 
 public class JetLinksProtocolSupportProvider implements ProtocolSupportProvider {
 
+    // ==========================================================================
+    // Workaround: preload all protocol classes to avoid ClassNotFoundException in encode path
+    //
+    // ProtocolClassLoader lazy loads inner classes which can cause
+    // ClassNotFoundException when encoding (e.g. TopicMessageCodec.doEncode
+    // calling TopicPayload.of(...)).
+    //
+    // This static block scans all .class entries in the JAR and calls
+    // Class.forName() to preload them into the ProtocolClassLoader cache.
+    
+    // ==========================================================================
+    static {
+        try {
+            ClassLoader cl = JetLinksProtocolSupportProvider.class.getClassLoader();
+            java.net.URL src = JetLinksProtocolSupportProvider.class
+                .getProtectionDomain().getCodeSource().getLocation();
+            int count = 0;
+            try (java.util.jar.JarInputStream jis =
+                     new java.util.jar.JarInputStream(src.openStream())) {
+                java.util.jar.JarEntry e;
+                while ((e = jis.getNextJarEntry()) != null) {
+                    String name = e.getName();
+                    if (name.endsWith(".class")
+                        && name.startsWith("org/jetlinks/protocol/official/")) {
+                        String cn = name.substring(0, name.length() - 6).replace('/', '.');
+                        try {
+                            Class.forName(cn, false, cl);
+                            count++;
+                        } catch (Throwable ignored) {
+                            // best effort: individual class load failures are non-fatal
+                        }
+                    }
+                }
+            }
+            System.out.println("preloaded " + count
+                + " classes from official-protocol JAR via " + src);
+        } catch (Throwable t) {
+            System.err.println("preload failed: " + t);
+        }
+    }
+
     @Override
     public Mono<CompositeProtocolSupport> create(ServiceContext context) {
         return Mono.defer(() -> {
